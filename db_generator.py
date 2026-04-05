@@ -66,10 +66,11 @@ def build_database():
     recipe_ingredient_mappings = []
 
     print("Mapping Recipe Ingredients to USDA Database...")
-    print("WARNING: Fuzzy matching hundreds of thousands of recipes will take significant time.")
+    print("Processing 100 recipes using memoization for speed...")
     
-    # For testing, we are only processing the first 100 recipes. 
-    # Remove the .head(100) when you are ready to process all 294MB.
+    # 1. Create a cache to store ingredients we've already matched
+    match_cache = {}
+    
     for index, row in recipes_df.head(100).iterrows():
         try:
             # Kaggle saves lists as string literals: "['chicken', 'salt']"
@@ -80,9 +81,16 @@ def build_database():
         for raw_ing in raw_ingredients:
             cleaned_ing = clean_recipe_ingredient(raw_ing)
             
-            # Fuzzy Match
-            best_match = process.extractOne(cleaned_ing, usda_ingredient_names, scorer=fuzz.token_set_ratio, score_cutoff=75)
-            matched_usda_name = best_match[0] if best_match else "Unmatched"
+            # 3. Check the cache before doing the heavy fuzzy match
+            if cleaned_ing in match_cache:
+                matched_usda_name = match_cache[cleaned_ing]
+            else:
+                # If not in cache, do the heavy lifting
+                best_match = process.extractOne(cleaned_ing, usda_ingredient_names, scorer=fuzz.token_set_ratio, score_cutoff=75)
+                matched_usda_name = best_match[0] if best_match else "Unmatched"
+                
+                # Save the result to the cache so we never process this word again
+                match_cache[cleaned_ing] = matched_usda_name
             
             recipe_ingredient_mappings.append({
                 'recipe_id': row['id'],
