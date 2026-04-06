@@ -40,7 +40,7 @@ def load_recipe_data():
     
     try:
         df = pd.read_sql(query, conn)
-    except sqlite3.OperationalError:
+    except (sqlite3.OperationalError, pd.errors.DatabaseError):
         print("Error: 'recipe_nutritional_totals' table not found.")
         print("Please ensure you have calculated the total macros per recipe first.")
         conn.close()

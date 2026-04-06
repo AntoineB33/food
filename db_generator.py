@@ -105,6 +105,53 @@ def build_database():
     
     print(f"\nSuccess! Local database '{LOCAL_DB_NAME}' generated.")
     conn.close()
+    
+    generate_recipe_totals()
+
+def generate_recipe_totals():
+    print("Calculating total nutrition per recipe...")
+    conn = sqlite3.connect(LOCAL_DB_NAME)
+    
+    # 1. Join our mapped ingredients with the raw USDA nutrient data
+    query = """
+        SELECT 
+            r.recipe_id, 
+            r.recipe_title, 
+            u.*
+        FROM recipe_ingredients r
+        INNER JOIN raw_ingredients u ON r.matched_usda_ingredient = u.description
+    """
+    
+    try:
+        df = pd.read_sql(query, conn)
+        
+        # 2. Group by recipe and sum up the nutrients
+        # numeric_only=True ensures we don't try to sum up text columns like descriptions
+        totals_df = df.groupby(['recipe_id', 'recipe_title']).sum(numeric_only=True).reset_index()
+        
+        # 3. Rename USDA specific column names to match the clean names solver.py expects
+        # Note: USDA column names depend exactly on how the pivot_table named them. 
+        # You may need to adjust the keys below based on your exact USDA nutrient names.
+        rename_map = {
+            'Energy': 'Calories',
+            'Carbohydrate, by difference': 'Carbs',
+            'Total lipid (fat)': 'Fat',
+            'Fiber, total dietary': 'Fiber',
+            'Vitamin C, total ascorbic acid': 'Vitamin_C'
+            # Protein, Sodium, Potassium, Magnesium, and Zinc usually match exactly
+        }
+        
+        totals_df = totals_df.rename(columns=rename_map)
+        
+        # 4. Save this as the final table the solver needs
+        totals_df.to_sql('recipe_nutritional_totals', conn, if_exists='replace', index=False)
+        print("Successfully built the 'recipe_nutritional_totals' table.")
+        
+    except Exception as e:
+        print(f"Error calculating totals: {e}")
+        
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     build_database()
