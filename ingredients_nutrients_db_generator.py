@@ -3,12 +3,12 @@ import sqlite3
 import pandas as pd
 
 # 1. Configuration: File paths
-DB_PATH = "nutrition.db"
+DB_PATH = "ingredients_nutrients.db"
 FOOD_CSV_PATH = r'FoodData_Central_foundation_food_csv_2025-12-18\FoodData_Central_foundation_food_csv_2025-12-18\food.csv'
 NUTRIENT_CSV_PATH = r'FoodData_Central_foundation_food_csv_2025-12-18\FoodData_Central_foundation_food_csv_2025-12-18\food_nutrient.csv'
 NUTRIENT_DEF_CSV_PATH = r'FoodData_Central_foundation_food_csv_2025-12-18\FoodData_Central_foundation_food_csv_2025-12-18\nutrient.csv'
 
-def setup_database(db_name="nutrition.db"):
+def setup_database(db_name):
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
 
@@ -100,7 +100,7 @@ def run_bulk_import():
 
 # --- Execution ---
 if __name__ == "__main__":
-    db_connection = setup_database()
+    db_connection = setup_database(DB_PATH)
     print("Database schema created successfully.")
     db_connection.close()
     run_bulk_import()

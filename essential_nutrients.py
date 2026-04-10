@@ -1,6 +1,6 @@
 import pandas as pd
 
-from ingredients_nutrients import NUTRIENT_DEF_CSV_PATH
+from ingredients_nutrients_db_generator import NUTRIENT_DEF_CSV_PATH
 
 
 essential_nutrients = [

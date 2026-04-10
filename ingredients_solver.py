@@ -4,8 +4,11 @@ import pulp
 
 # Import your mappings and intervals from the local file
 from essential_nutrients import daily_nutrient_intervals, usda_nutrient_mapping
+from ingredients_nutrients_db_generator import DB_PATH
 
-def solve_daily_menu(db_path="nutrition.db"):
+BASE_UNIT = 100  # USDA data is typically per 100g, so our variables represent multiples of this base unit
+
+def solve_daily_menu(db_path):
     # 1. Connect to Database and Extract Data
     conn = sqlite3.connect(db_path)
     
@@ -69,20 +72,20 @@ def solve_daily_menu(db_path="nutrition.db"):
     print(f"Solver Status: {status}\n")
 
     if status == "Optimal":
-        print("Optimal Daily Menu (Multipliers of base DB unit, typically 100g):")
+        print("Optimal Daily Menu:")
         print("-" * 50)
         
         total_weight_multiplier = 0
         for f in matrix.index:
             amount = food_vars[f].varValue
             if amount is not None and amount > 0.01: # Filter out trace zero amounts
-                print(f"{f}: {amount:.2f} units")
+                print(f"{f}: {amount*BASE_UNIT:.2f} grams")
                 total_weight_multiplier += amount
                 
         print("-" * 50)
-        print(f"Total Base Units Consumed: {total_weight_multiplier:.2f}")
+        print(f"Total Base Units Consumed: {total_weight_multiplier*BASE_UNIT:.2f} grams")
     else:
         print("No feasible menu could be found. The constraints may be too tight, or the database lacks foods to fulfill specific nutrient combinations.")
 
 if __name__ == "__main__":
-    solve_daily_menu("nutrition.db")
+    solve_daily_menu(DB_PATH)
