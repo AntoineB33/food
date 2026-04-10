@@ -5,22 +5,9 @@ import pandas as pd
 DB_PATH = "nutrition.db"
 FOOD_CSV_PATH = r'FoodData_Central_foundation_food_csv_2025-12-18\FoodData_Central_foundation_food_csv_2025-12-18\food.csv'
 NUTRIENT_CSV_PATH = r'FoodData_Central_foundation_food_csv_2025-12-18\FoodData_Central_foundation_food_csv_2025-12-18\food_nutrient.csv'
+# Add the path to the nutrient definitions file you just showed me:
+NUTRIENT_DEF_CSV_PATH = r'FoodData_Central_foundation_food_csv_2025-12-18\FoodData_Central_foundation_food_csv_2025-12-18\nutrient.csv'
 
-# 2. Map USDA Nutrient IDs to YOUR database's exact nutrient names.
-# You will need to look at the USDA's 'nutrient.csv' to find the IDs for all 42 of your nutrients.
-# Here is a sample of what that mapping looks like:
-USDA_ID_TO_LOCAL_NAME = {
-    1051: "Water",
-    1162: "Vitamin C (Ascorbic acid)",
-    1092: "Potassium",
-    1087: "Calcium",
-    1089: "Iron",
-    1090: "Magnesium",
-    1091: "Phosphorus",
-    1093: "Sodium",
-    1095: "Zinc"
-    # ... add the rest of your 42 nutrients here ...
-}
 
 def run_bulk_import():
     # Connect to your existing database
@@ -32,17 +19,17 @@ def run_bulk_import():
     # Read the USDA CSV files
     df_foods = pd.read_csv(FOOD_CSV_PATH)
     df_nutrients = pd.read_csv(NUTRIENT_CSV_PATH)
+    df_nutrient_defs = pd.read_csv(NUTRIENT_DEF_CSV_PATH) # Load the definitions
 
     print(f"Found {len(df_foods)} foods in the USDA dataset.")
 
+    # --- NEW: AUTOMATICALLY GENERATE THE DICTIONARY ---
+    print("Generating USDA ID mapping...")
+    # This turns the two columns ('id' and 'name') into a Python dictionary: {2047: "Energy...", 1003: "Protein", ...}
+    USDA_ID_TO_LOCAL_NAME = pd.Series(df_nutrient_defs['name'].values, index=df_nutrient_defs['id']).to_dict()
+
     # --- PART 1: IMPORT INGREDIENTS ---
     print("Importing Ingredients...")
-    # Prepare a list of tuples: (fdc_id, description)
-    # We will temporarily insert the USDA's 'fdc_id' into our DB as the Primary Key 
-    # to make linking the junction table much easier.
-    
-    # NOTE: If your Ingredients table doesn't have an 'id' that you can manually set, 
-    # SQLite allows you to insert into the AUTOINCREMENT column if you specify it.
     foods_to_insert = list(zip(df_foods['fdc_id'], df_foods['description']))
     
     cursor.executemany("""
@@ -53,7 +40,6 @@ def run_bulk_import():
 
 
     # --- PART 2: GET LOCAL NUTRIENT IDs ---
-    # We need to know the ID of "Water" or "Calcium" inside YOUR database.
     cursor.execute("SELECT id, name FROM Nutrients")
     local_nutrients = {name: id for id, name in cursor.fetchall()}
 
@@ -61,7 +47,7 @@ def run_bulk_import():
     # --- PART 3: FILTER AND IMPORT JUNCTION DATA ---
     print("Filtering and Importing Nutrition Data...")
     
-    # Filter the massive USDA dataset to ONLY include the nutrient IDs in your dictionary
+    # Filter the massive USDA dataset to ONLY include the nutrient IDs we have mapped
     valid_usda_ids = list(USDA_ID_TO_LOCAL_NAME.keys())
     df_filtered_nutrients = df_nutrients[df_nutrients['nutrient_id'].isin(valid_usda_ids)]
 
@@ -77,13 +63,13 @@ def run_bulk_import():
         local_name = USDA_ID_TO_LOCAL_NAME.get(usda_nut_id)
         local_db_id = local_nutrients.get(local_name)
 
-        # Only add if the amount is greater than 0 to save space, and if the nutrient exists in your DB
+        # Because we mapped ALL USDA nutrients, 'local_db_id' will be None for anything 
+        # that isn't one of your 42 specific nutrients. The 'if' statement cleanly skips them!
         if local_db_id and amount > 0:
             junction_data.append((food_id, local_db_id, amount))
 
     print(f"Inserting {len(junction_data)} nutrient records...")
     
-    # Use executemany for massive performance gains (inserts thousands of rows per second)
     cursor.executemany("""
         INSERT OR REPLACE INTO Ingredient_Nutrients (ingredient_id, nutrient_id, amount)
         VALUES (?, ?, ?)
