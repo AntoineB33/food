@@ -3,8 +3,16 @@ to get the database ingredients_nutrients.db (ingredients - nutrients) :
 - run ingredients_nutrients.py to create ingredients_nutrients.db.
 
 
-ingredients_nutrients.db is a relational database with three linked tables:
+`ingredients_nutrients.db` is a relational database containing tables for USDA foundation foods and user-defined recipes, alongside dynamic views for nutritional calculations.
 
+### Core USDA Tables
 * **`Ingredients`**: Stores food items (ID and name).
 * **`Nutrients`**: Stores nutrient definitions (ID, name, and measurement unit).
-* **`Ingredient_Nutrients`**: A junction table that records the exact amount of specific nutrients contained within each ingredient.
+* **`Ingredient_Nutrients`**: A junction table that records the exact amount of specific nutrients contained within each 100g of an ingredient.
+
+### Recipe Management Tables
+* **`Recipes`**: Stores custom recipes (ID, name, and preparation instructions).
+* **`Recipe_Ingredients`**: A junction table linking recipes to ingredients, recording the specific `amount_grams` of each ingredient used in a recipe.
+
+### Dynamic Views
+* **`Recipe_Nutrients`**: A virtual table (SQL VIEW) that automatically aggregates and calculates the total nutritional profile of a recipe on the fly based on its constituent ingredients and their respective weights.
