@@ -1,0 +1,1 @@
+Give me a list of categories that together contain all the healthy recipes (and healthy food that can be eaten without being in a recipe in a good meal) in the category "Suspensions, Soups & Stews". An item should not be possibly found in several categories.
