@@ -31,20 +31,49 @@ def solve_daily_menu_with_recipes(db_path):
     df['essential_nutrient'] = df['nutrient_name'].map(reverse_mapping)
     df = df.dropna(subset=['essential_nutrient'])
 
+    if df.empty:
+        print("No recipe data available to process.")
+        return
+
     # 3. Create a Nutrient Matrix (Rows: Recipes, Cols: Nutrients)
-    matrix = df.pivot_table(
+    # NOTE: We DO NOT fillna(0) just yet, so we can identify which nutrients are genuinely missing
+    matrix_raw = df.pivot_table(
         index='recipe_name', 
         columns='essential_nutrient', 
         values='amount',
         aggfunc='mean'
-    ).fillna(0)
+    )
+
+    # --- NEW LOGIC: Maximize not-ignored nutrients supported by at least 1 recipe ---
+    # Identify which nutrients we actually have constraints for
+    interval_nutrients = [n for n in daily_nutrient_intervals.keys() if n in matrix_raw.columns]
+    
+    if not interval_nutrients:
+        print("No essential nutrients from the intervals were found in the database.")
+        return
+
+    # Count how many of those tracked nutrients have valid (non-NaN) data per recipe
+    valid_counts = matrix_raw[interval_nutrients].notna().sum(axis=1)
+    
+    # Find the recipe that has data for the highest number of nutrients
+    best_recipe = valid_counts.idxmax()
+    
+    # Define our 'not ignored' nutrients as the ones present in this best recipe
+    not_ignored_nutrients = set(
+        n for n in interval_nutrients if pd.notna(matrix_raw.loc[best_recipe, n])
+    )
+    
+    print(f"Condition Met: Recipe '{best_recipe}' has data for the maximal subset ({len(not_ignored_nutrients)} nutrients).")
+    print("Enforcing constraints for this subset; ignoring others to prevent unsolvable intervals.\n")
+    
+    # Now that we've found our target nutrients, safely fill NaNs with 0 for the solver math
+    matrix = matrix_raw.fillna(0)
 
     # 4. Initialize the Linear Programming Problem
     # We want to minimize the total quantity of recipes consumed
     prob = pulp.LpProblem("Optimal_Daily_Recipe_Menu", pulp.LpMinimize)
 
     # Create a continuous variable for each recipe (amount >= 0)
-    # 1 unit = 1 complete recipe
     recipe_vars = pulp.LpVariable.dicts("Recipe", matrix.index, lowBound=0, cat='Continuous')
 
     # Objective Function: Minimize the sum of all recipe variables
@@ -52,7 +81,7 @@ def solve_daily_menu_with_recipes(db_path):
 
     # 5. Add Constraints for each nutrient based on your daily_nutrient_intervals
     for nutrient, (min_val, max_val) in daily_nutrient_intervals.items():
-        if nutrient in matrix.columns:
+        if nutrient in not_ignored_nutrients:
             # Nutrient total calculation: sum of (total amount in recipe * recipe_variable)
             nutrient_total = pulp.lpSum([matrix.loc[r, nutrient] * recipe_vars[r] for r in matrix.index])
             
@@ -60,14 +89,17 @@ def solve_daily_menu_with_recipes(db_path):
             prob += nutrient_total >= min_val, f"Min_{nutrient.replace(' ', '_')}"
             prob += nutrient_total <= max_val, f"Max_{nutrient.replace(' ', '_')}"
         else:
-            print(f"Warning: '{nutrient}' has no data in the database. Constraints skipped.")
+            if nutrient not in matrix.columns:
+                print(f"Warning: '{nutrient}' completely missing from database. Skipped.")
+            else:
+                print(f"Warning: '{nutrient}' ignored because no single recipe has data for it alongside the maximal subset.")
 
     # 6. Solve the Equation
     prob.solve(pulp.PULP_CBC_CMD(msg=False))
 
     # 7. Evaluate and Print Results
     status = pulp.LpStatus[prob.status]
-    print(f"Solver Status: {status}\n")
+    print(f"\nSolver Status: {status}\n")
 
     if status == "Optimal":
         print("Optimal Daily Menu (in fractions of whole recipes):")
