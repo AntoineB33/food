@@ -1,73 +1,117 @@
 import pandas as pd
 import pulp
 
-# 1. Load the Nutritional Database from the CSV file
-df = pd.read_csv("vegan_database.csv")
+# ---------------------------------------------------------
+# 1. Load and Filter USDA SR Legacy CSVs
+# ---------------------------------------------------------
+print("Loading USDA files...")
+food_df = pd.read_csv("food.csv", usecols=["fdc_id", "description"])
+nutrient_df = pd.read_csv("nutrient.csv", usecols=["id", "name", "unit_name"])
+food_nutrient_df = pd.read_csv("food_nutrient.csv", usecols=["fdc_id", "nutrient_id", "amount"])
 
-# Convert the pandas dataframe into a dictionary formatted for the PuLP solver
-# This automatically maps the 'Food_Name' column to the dictionary keys
-foods = df.set_index('Food_Name').to_dict(orient='index')
+# Target Nutrient IDs in USDA FoodData Central:
+# 1008: Energy (kcal), 1003: Protein (g), 1004: Total Fat (g),
+# 1005: Carbohydrate (g), 1079: Fiber (g), 1093: Sodium (mg), 1213: Leucine (g)
+TARGET_NUTRIENTS = {
+    1008: "calories",
+    1003: "protein",
+    1004: "fat",
+    1005: "carbs",
+    1079: "fiber",
+    1093: "sodium",
+    1213: "leucine"
+}
 
-# Now the 'foods' dictionary is identical in structure to the previous manual one,
-# and you can run the rest of the PuLP solver code exactly as before!
+# Curate a list of keywords to pull whole vegan ingredients (per 100g raw/cooked)
+VEGAN_KEYWORDS = [
+    "Tofu, firm", "Soybeans, mature cooked", "Lentils, mature seeds, cooked",
+    "Beans, black, mature seeds, cooked", "Chickpeas, mature seeds, cooked",
+    "Oats", "Rice, brown, long-grain, cooked", "Rice, white, long-grain, regular, cooked",
+    "Peanuts, all types, raw", "Seeds, chia seeds", "Seeds, flaxseed",
+    "Nuts, walnuts, English", "Broccoli, cooked", "Spinach, cooked",
+    "Sweet potato, cooked, baked", "Salt, table"
+]
 
-# 2. Define the Minimum and Maximum Bounds (from your table)
-# We will use Leucine in grams (3.0g to 6.0g) to keep units manageable.
+# Match food descriptions
+pattern = "|".join(VEGAN_KEYWORDS)
+filtered_foods = food_df[food_df["description"].str.contains(pattern, case=False, na=False)].copy()
+
+# Join with nutrient values
+merged = filtered_foods.merge(food_nutrient_df, on="fdc_id")
+merged = merged[merged["nutrient_id"].isin(TARGET_NUTRIENTS.keys())]
+merged["nutrient_name"] = merged["nutrient_id"].map(TARGET_NUTRIENTS)
+
+# Pivot so rows = Food, columns = Nutrients (values are per 100g)
+db = merged.pivot_table(index="description", columns="nutrient_name", values="amount", fill_value=0).reset_index()
+
+# Convert to PuLP-friendly dictionary
+foods_raw = db.set_index("description").to_dict(orient="index")
+foods: dict[str, dict[str, float]] = {
+    str(description): {str(key): float(value) for key, value in row.items()}
+    for description, row in foods_raw.items()
+}
+print(f"Extracted {len(foods)} candidate ingredients from SR Legacy.\n")
+
+# ---------------------------------------------------------
+# 2. Define Solver Bounds (Daily Targets)
+# ---------------------------------------------------------
 bounds = {
     "calories": (2350, 2550),
     "protein": (150, 180),
     "fat": (65, 85),
     "carbs": (240, 310),
-    "fiber": (34, 65),     # Crucial constraint to prevent extreme fiber loads
-    "sodium": (1500, 3000),
-    "leucine": (3.0, 6.0)
+    "fiber": (34, 65),       # Prevents gut distress and phytic acid saturation
+    "sodium": (1500, 3000),   # Met naturally + via table salt
+    "leucine": (3.0, 8.0)     # USDA Leucine is in grams per 100g
 }
 
-# 3. Initialize the Mixed-Integer Linear Programming (MILP) Problem
-# We use LpMinimize, aiming to minimize total calories to stay lean, 
-# while strictly obeying all minimum bounds.
-prob = pulp.LpProblem("Vegan_Recomposition_Diet", pulp.LpMinimize)
+# ---------------------------------------------------------
+# 3. Formulate the MILP Model
+# ---------------------------------------------------------
+prob = pulp.LpProblem("SR_Legacy_Vegan_Recomp", pulp.LpMinimize)
 
-# 4. Create Decision Variables (How many servings of each food?)
-# 'lowBound=0' prevents negative servings.
-# 'cat="Integer"' forces whole servings (1, 2, 3) instead of fractions.
-# 'upBound=3' prevents the solver from just feeding you 8 bowls of oatmeal.
+# Decision variables: Number of 100g units (or 0.1 units = 10g for dense foods)
+# Using continuous variables (cat='Continuous') with step increments is more realistic 
+# than strict integers when measuring raw ingredients by weight.
 servings = {
-    food: pulp.LpVariable(f"servings_{str(food).replace(' ', '_')}", lowBound=0, upBound=3, cat="Integer") 
-    for food in foods
+    food: pulp.LpVariable(f"g_{i}", lowBound=0, upBound=6.0, cat="Continuous")
+    for i, food in enumerate(foods)
 }
 
-# 5. Set the Objective Function: Minimize Total Calories
-prob += pulp.lpSum([foods[food]["calories"] * servings[food] for food in foods]), "Total_Calories"
+# Restrict table salt to reasonable culinary usage (max 0.08 x 100g = 8g salt)
+for food in foods:
+    if isinstance(food, str) and "Salt" in food:
+        servings[food].upBound = 0.08
 
-# 6. Apply the Constraints programmatically
+# Objective: Minimize total calories within the window
+prob += pulp.lpSum([foods[f]["calories"] * servings[f] for f in foods]), "Minimize_Calories"
+
+# Apply all nutrient bounds
 for nutrient, (min_val, max_val) in bounds.items():
-    # Sum of (Nutrient per serving * Number of servings) >= Min Target
-    prob += pulp.lpSum([foods[food][nutrient] * servings[food] for food in foods]) >= min_val, f"Min_{nutrient}"
-    # Sum of (Nutrient per serving * Number of servings) <= Max Target
-    prob += pulp.lpSum([foods[food][nutrient] * servings[food] for food in foods]) <= max_val, f"Max_{nutrient}"
+    prob += pulp.lpSum([foods[f][nutrient] * servings[f] for f in foods]) >= min_val, f"Min_{nutrient}"
+    prob += pulp.lpSum([foods[f][nutrient] * servings[f] for f in foods]) <= max_val, f"Max_{nutrient}"
 
-# 7. Add a "Variety Constraint" (Optional but recommended)
-# Force the solver to include at least 3 total servings of "base" meals, rather than just surviving on protein powder and rice.
-base_meals = [food for food, data in foods.items() if data["type"] == "base"]
-prob += pulp.lpSum([servings[food] for food in base_meals]) >= 3, "Minimum_Base_Meals"
-
-# 8. Solve the Problem
-prob.solve()
-
-# 9. Output the Results
-print(f"Status: {pulp.LpStatus[prob.status]}\n")
+# ---------------------------------------------------------
+# 4. Solve and Inspect
+# ---------------------------------------------------------
+prob.solve(pulp.PULP_CBC_CMD(msg=False))
+print(f"Solver Status: {pulp.LpStatus[prob.status]}")
 
 if prob.status == pulp.LpStatusOptimal:
-    print("### Optimal Daily Meal Plan ###")
+    print("\n### Generated Daily Whole-Food Rations ###")
     for food in foods:
-        qty = servings[food].varValue
-        if qty is not None and qty > 0:
-            print(f"- {int(qty)}x {food}")
+        val = servings[food].varValue
+        if val and val > 0.05:  # Filter out trivial amounts (<5g)
+            grams = round(val * 100, 1)
+            print(f"- {food[:50]}: {grams}g")
 
-    print("\n### Daily Totals Achieved ###")
+    print("\n### Daily Totals ###")
     for nutrient in bounds:
-        total = sum([foods[food][nutrient] * servings[food].varValue for food in foods])
-        print(f"{nutrient.capitalize()}: {round(total, 1)}")
+        total = sum(
+            foods[f][nutrient] * (servings[f].varValue or 0.0)
+            for f in foods
+        )
+        unit = "mg" if nutrient in ["sodium"] else ("kcal" if nutrient == "calories" else "g")
+        print(f"{nutrient.capitalize()}: {round(total, 1)} {unit}")
 else:
-    print("No feasible combination found. Adjust your bounds or add more diverse foods to the database.")
+    print("Infeasible: Try relaxing the fiber upper limit or expanding the candidate keyword list.")
