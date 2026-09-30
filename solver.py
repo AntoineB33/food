@@ -1,3 +1,5 @@
+import sys
+
 import pandas as pd
 import pulp
 
@@ -13,7 +15,7 @@ try:
     nutrient_df = pd.read_csv("nutrient.csv", usecols=["id", "name", "unit_name"])
 except FileNotFoundError:
     print("Warning: Missing required CSV files. Ensure you have run the database creation script first.")
-    exit()
+    sys.exit()
 
 # Target Nutrient IDs in USDA FoodData Central mapped to code variables
 TARGET_NUTRIENTS = {

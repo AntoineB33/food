@@ -1,3 +1,5 @@
+import sys
+
 import pandas as pd
 import pulp
 
@@ -21,7 +23,7 @@ try:
     food_nutrient_df = pd.concat([food_nutrient_df, food_nutrient_manual_df], ignore_index=True)
 except FileNotFoundError:
     print("Warning: Missing USDA CSV files. Ensure food.csv, nutrient.csv, etc., are in the directory.")
-    exit()
+    sys.exit()
 
 # Target Nutrient IDs in USDA FoodData Central mapped to code variables
 # Note: Cu, Fe, Zn are in mg. Vitamins A/K/B9 are in mcg/mcg DFE.

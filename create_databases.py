@@ -1,3 +1,5 @@
+import sys
+
 import pandas as pd
 
 # ---------------------------------------------------------
@@ -16,7 +18,7 @@ try:
     
 except FileNotFoundError:
     print("Warning: Missing USDA CSV files. Ensure food.csv, food_manual.csv, etc., are in the directory.")
-    exit()
+    sys.exit()
 
 # Combine datasets
 food_combined = pd.concat([food_df, food_manual_df], ignore_index=True)
