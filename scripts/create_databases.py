@@ -17,8 +17,10 @@ try:
 
     # Load custom manual files
     food_manual_df = pd.read_csv(DB_DIR / "food_manual.csv", usecols=["fdc_id", "description"])
+    if "data_type" in food_manual_df.columns:
+        food_manual_df = food_manual_df.drop(columns=["data_type"])
     food_nutrient_manual_df = pd.read_csv(DB_DIR / "food_nutrient_manual.csv", usecols=["fdc_id", "nutrient_id", "amount"])
-    
+
 except FileNotFoundError:
     print("Warning: Missing USDA CSV files. Ensure food.csv, food_manual.csv, etc., are in the directory.")
     sys.exit()

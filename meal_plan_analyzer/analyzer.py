@@ -3,12 +3,12 @@ from pathlib import Path
 
 import pandas as pd
 
-if len(sys.argv) < 2:
-    print("Usage: python analyzer.py <diet_csv_file>")
-    sys.exit(1)
-
-input_file = sys.argv[1]
-DB_DIR = Path(__file__).resolve().parents[1] / "DB"
+# ---------------------------------------------------------
+# Set your input CSV file name here
+# ---------------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent
+DB_DIR = BASE_DIR.parent / "DB"
+input_file = BASE_DIR / "my_diet.csv"
 
 # ---------------------------------------------------------
 # 1. Target Nutrients & Bounds (From Solver)
@@ -57,10 +57,15 @@ except FileNotFoundError as e:
     print(f"Error loading file: {e}")
     sys.exit(1)
 
+diet_df = diet_df.rename(columns={"food_id": "fdc_id", "quantity": "quantity_g"})
+
 # Ensure required columns exist
 if "fdc_id" not in diet_df.columns or "quantity_g" not in diet_df.columns:
     print("Input CSV must contain 'fdc_id' and 'quantity_g' columns.")
     sys.exit(1)
+
+diet_df["fdc_id"] = pd.to_numeric(diet_df["fdc_id"], errors="raise")
+diet_df["quantity_g"] = pd.to_numeric(diet_df["quantity_g"], errors="raise")
 
 # ---------------------------------------------------------
 # 3. Calculate Total Nutrients
@@ -100,7 +105,7 @@ for nutrient, (min_val, max_val) in all_bounds.items():
 # ---------------------------------------------------------
 # 5. Display Results
 # ---------------------------------------------------------
-print(f"\n--- NUTRITION ANALYSIS FOR {input_file} ---")
+print(f"\n--- NUTRITION ANALYSIS FOR {input_file.name} ---")
 
 print("\n🚨 LACKING NUTRIENTS (Below Minimum):")
 if not lacking:

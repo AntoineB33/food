@@ -1,18 +1,22 @@
-Meal,Food Item Description (SR Legacy / Custom),FDC ID,Quantity
-1,"Tofu scramble, with kale and bell peppers, vegan",999999,1 serving
-1,"Oats, regular and quick, not fortified, dry",173904,50 g
-1,"Seeds, chia seeds, dried",170554,1 tbsp (~10 g)
-1,"Blueberries, raw",171711,0.5 cup (~74 g)
-1,"Nuts, brazilnuts, dried, unblanched",170569,1 large nut (~5 g)
-2,"Tempeh and roasted vegetable quinoa bowl, vegan",999998,1 serving
-2,"Oil, olive, salad or cooking",171413,1 tbsp (~14 g)
-2,"Lemon juice, raw",167747,1 tbsp (~15 g)
-2,"Leavening agents, yeast, baker's, active dry*",18375,1 tbsp (~12 g)
-3,"Pea and rice protein shake with soy milk, vegan",999997,1 serving
-3,"Bananas, raw",173944,1 medium (~118 g)
-4,"Seitan and broccoli stir-fry with edamame, vegan",999996,1 serving
-4,"Noodles, japanese, soba, cooked",168486,1 cup (~114 g)
-4,"Oil, sesame, salad or cooking",170438,1 tbsp (~14 g)
-4,Soy sauce made from soy and wheat (shoyu),16124,1 tbsp (~16 g)
-4,"Garlic, raw",11215,1 clove (~3 g)
-4,"Ginger root, raw",11216,1 tsp (~2 g)
+food_id,quantity
+999999,1
+173904,50
+170554,14
+171711,74
+170569,5
+999998,1
+171413,14
+167747,15
+169865,5
+999997,1
+173944,118
+1000003,5
+999996,1
+168481,114
+170557,14
+164240,16
+169230,3
+169231,2
+1000000,1
+1000001,1
+1000002,1

@@ -1,16 +1,17 @@
 .\DB\food_manual.csv
 ```csv
-fdc_id,data_type,description,food_category_id,publication_date
-999999,sr_legacy_food,"Tofu scramble, with kale and bell peppers, vegan",1100,2026-09-30
-999998,sr_legacy_food,"Tempeh and roasted vegetable quinoa bowl, vegan",1600,2026-09-30
-999997,sr_legacy_food,"Pea and rice protein shake with soy milk, vegan",1100,2026-09-30
-999996,sr_legacy_food,"Seitan and broccoli stir-fry with edamame, vegan",1600,2026-09-30
+fdc_id,description
+999999,"Tofu scramble, with kale and bell peppers, vegan"
+999998,"Tempeh and roasted vegetable quinoa bowl, vegan"
+999997,"Pea and rice protein shake with soy milk, vegan"
+999996,"Seitan and broccoli stir-fry with edamame, vegan"
 1000000,Algae Oil
 1000001,Vitamin D3 (Lichen)
 1000002,Vitamin B12
 1000003,Creatine monohydrate
 
 ```
+
 
 
 
