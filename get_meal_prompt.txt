@@ -1,0 +1,51 @@
+Nutrient	Minimum	Maximum	Notes (Bioavailability, Pairings & Solver Tips)
+Calories	2,350 kcal	2,550 kcal	~250 kcal deficit for body recomposition at 76.6kg. Soft range allows the solver to balance macros.
+Protein	150 g	180 g	Mix pea/rice or use soy for EAAs. (Original min of 122g is too low for your 160g goal; 150g forces the solver closer to your target).
+Fat	65 g	85 g	Keep ~1.0 g/kg for hormone regulation.
+Carbohydrates	240 g	310 g	Allows the solver flexibility to make up the remaining calories after Protein and Fat are set.
+Water	3.2 L	4.5 L	Add extra on alternate days to account for workout sweat.
+Dietary Fiber	34 g	65 g	Crucial constraint for vegans: Cap at 65g so the solver doesn't output extreme fiber loads that ruin mineral absorption.
+Omega-3 (ALA)	1.6 g	4.0 g	Found in chia/flaxseeds. Convert poorly to EPA/DHA.
+Omega-6 (Linoleic)	11 g	20 g	Keep upper bound tight to maintain roughly a 4:1 ratio with Omega-3 to minimize inflammation.
+EPA/DHA	500 mg	1,000 mg	Exclude from food solver. Hardcode as an Algae oil supplement.
+Leucine (EAA)	3,000 mg	6,000 mg	Solver Note: Needs ≥2.5g per meal to trigger muscle protein synthesis. Daily totals don't tell the whole story.
+Lysine (EAA)	2,300 mg	5,000 mg	Often low in vegan diets; prioritize soy, lentils, and tempeh.
+Valine (EAA)	2,000 mg	5,000 mg	Branched-chain amino acid (BCAA).
+Isoleucine (EAA)	1,530 mg	4,000 mg	Branched-chain amino acid (BCAA).
+Phe + Tyr (EAA)	1,915 mg	5,000 mg	Phenylalanine and Tyrosine.
+Met + Cys (EAA)	1,150 mg	3,000 mg	Methionine and Cysteine.
+Threonine (EAA)	1,150 mg	3,000 mg	Supports collagen synthesis.
+Histidine (EAA)	766 mg	2,000 mg	Vital for tissue repair.
+Tryptophan (EAA)	306 mg	1,000 mg	Precursor to serotonin.
+Vitamin A	900 mcg RAE	3,000 mcg	Provitamin A (beta-carotene). Must consume with fats for absorption.
+Vitamin C	90 mg	2,000 mg	Pair with Iron and Zinc at meals to multiply mineral absorption.
+Vitamin D3	600 IU	4,000 IU	Exclude from food solver. Hardcode as a vegan (Lichen) supplement.
+Vitamin E	15 mg	1,000 mg	Consume with fats.
+Vitamin K (K1+K2)	120 mcg	1,000 mcg	K1 from greens. K2 from natto or supplement. Consume with fats.
+Vitamin B1 (Thia)	1.2 mg	No limit	Scales with caloric intake. Water soluble, so no strict upper bound needed.
+Vitamin B2 (Ribo)	1.5 mg	No limit	Scales with caloric intake.
+Vitamin B3 (Niacin)	16.2 mg	35 mg	Scales with caloric intake.
+Vitamin B5	5 mg	No limit	Found in avocados, mushrooms, and legumes.
+Vitamin B6	1.3 mg	100 mg	Found in chickpeas and bananas.
+Vitamin B7 (Biotin)	30 mcg	No limit	Found in sweet potatoes and seeds.
+Vitamin B9 (Folate)	400 mcg DFE	1,000 mcg	High in leafy greens and lentils.
+Vitamin B12	2.4 mcg	No limit	Exclude from food solver. Hardcode as a supplement or fortified yeast.
+Iron (Non-Heme)	14.4 mg	45 mg	Vegan adjusted (1.8x). Separate from calcium/tea. Pair with Vitamin C.
+Zinc	16.5 mg	40 mg	Vegan adjusted (1.5x). Soak, sprout, or ferment legumes/grains to unlock.
+Calcium	1,000 mg	2,500 mg	Use low-oxalate sources (kale, broccoli, fortified milk), NOT spinach.
+Magnesium	400 mg	1,000 mg	Critical for ATP production during lifts. Upper limit only applies to supplements, food can go higher.
+Potassium	3,400 mg	6,000 mg	Counteracts sodium; critical for muscle contractions.
+Sodium	1,500 mg	3,000 mg	2,300 mg base max, but solver can go up to 3,000 mg on sweaty training days.
+Selenium	55 mcg	400 mcg	Exclude from food solver. Hardcode 1-2 Brazil nuts per day to avoid solver skewing meals.
+Iodine	150 mcg	1,100 mcg	Use iodized salt or sea vegetables (kelp/nori).
+Copper	900 mcg	10,000 mcg	Found in nuts, seeds, and whole grains.
+Manganese	2.3 mg	11 mg	High in oats, nuts, and soybeans.
+Phosphorus	700 mg	4,000 mg	Plentiful in plant proteins.
+Fluoride	4 mg	10 mg	Primarily from fluoridated water or tea.
+Chromium	35 mcg	200 mcg	Found in broccoli and whole wheat.
+Molybdenum	45 mcg	2,000 mcg	Extremely high in legumes (beans, lentils, peas).
+Chloride	2,300 mg	3,600 mg	Consumed alongside sodium (table salt).
+Choline	550 mg	3,500 mg	Prioritize soy, quinoa, broccoli, and Brussels sprouts.
+Creatine	3 g	5 g	Exclude from food solver. Supplement daily for musculation.
+
+Give me a vegan meal plan for a day satisfying the daily needs.

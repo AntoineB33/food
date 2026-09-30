@@ -1,3 +1,5 @@
+.\DB\food_manual.csv
+```csv
 fdc_id,data_type,description,food_category_id,publication_date
 999999,sr_legacy_food,"Tofu scramble, with kale and bell peppers, vegan",1100,2026-09-30
 999998,sr_legacy_food,"Tempeh and roasted vegetable quinoa bowl, vegan",1600,2026-09-30
@@ -7,3 +9,12 @@ fdc_id,data_type,description,food_category_id,publication_date
 1000001,Vitamin D3 (Lichen)
 1000002,Vitamin B12
 1000003,Creatine monohydrate
+
+```
+
+
+
+
+Provide me with a list of all food items (including prepared meals) on your menu that are not listed in the SR Legacy 2018 database (fdc.nal.usda.gov) and food_manual.csv. Do not include ingredients for prepared meals unless they are also listed as individual items on your menu.
+The list must be the names of the items, easy to copy.
+
