@@ -11,3 +11,16 @@ USDA SR Legacy has around 7,800 whole foods with complete amino acid profiles. T
 
 
 4. Place them in the same directory as your Python script.
+
+
+
+[the table]
+
+Give me a vegan meal plan for a day satisfying the daily needs.
+
+[Gemini's output]
+
+Give me a list of all the foods / prepared foods in your meal plan that are missing from the SR Legacy 2018 from fdc.nal.usda.gov. Don't put ingredients of a prepared food, unless it is also present as an independent food in your meal plan.
+
+Write a csv file with two columns: food id and quantity. For each food / prepared food in your meal plan, use the id from the SR Legacy 2018 from fdc.nal.usda.gov, and the quantity in the unity of the food (from the same database) as a number (no unity). Don't put ingredients of a prepared food, unless it is also present as an independent food in your meal plan.
+food_manual.csv is a an extension of food.csv from SR Legacy.
