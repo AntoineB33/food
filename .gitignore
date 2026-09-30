@@ -1,6 +1,10 @@
 .venv
 *.db
-*.csv
+vegan_database.csv
+food.csv
+nutrient.csv
+food_nutrient.csv
+food_nutrient_filtered.csv
 archive
 FoodData_Central_foundation_food_csv_2025-12-18
 *.pyc
