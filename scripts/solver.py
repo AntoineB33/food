@@ -1,7 +1,10 @@
 import sys
+from pathlib import Path
 
 import pandas as pd
 import pulp
+
+DB_DIR = Path(__file__).resolve().parents[1] / "DB"
 
 # ---------------------------------------------------------
 # 1. Load Filtered Databases & Nutrient Mappings
@@ -10,9 +13,9 @@ print("Loading filtered databases...")
 
 try:
     # Load the databases created by the first program, plus nutrient.csv
-    food_df = pd.read_csv("food_filtered.csv")
-    food_nutrient_df = pd.read_csv("food_nutrient_filtered.csv")
-    nutrient_df = pd.read_csv("nutrient.csv", usecols=["id", "name", "unit_name"])
+    food_df = pd.read_csv(DB_DIR / "food_filtered.csv")
+    food_nutrient_df = pd.read_csv(DB_DIR / "food_nutrient_filtered.csv")
+    nutrient_df = pd.read_csv(DB_DIR / "nutrient.csv", usecols=["id", "name", "unit_name"])
 except FileNotFoundError:
     print("Warning: Missing required CSV files. Ensure you have run the database creation script first.")
     sys.exit()

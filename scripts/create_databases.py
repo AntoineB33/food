@@ -1,6 +1,9 @@
 import sys
+from pathlib import Path
 
 import pandas as pd
+
+DB_DIR = Path(__file__).resolve().parents[1] / "DB"
 
 # ---------------------------------------------------------
 # 1. Load USDA SR Legacy CSVs + Manual CSVs
@@ -9,12 +12,12 @@ print("Loading USDA and custom manual files...")
 
 try:
     # Load standard SR Legacy files
-    food_df = pd.read_csv("food.csv", usecols=["fdc_id", "description"])
-    food_nutrient_df = pd.read_csv("food_nutrient.csv", usecols=["fdc_id", "nutrient_id", "amount"])
+    food_df = pd.read_csv(DB_DIR / "food.csv", usecols=["fdc_id", "description"])
+    food_nutrient_df = pd.read_csv(DB_DIR / "food_nutrient.csv", usecols=["fdc_id", "nutrient_id", "amount"])
 
     # Load custom manual files
-    food_manual_df = pd.read_csv("food_manual.csv", usecols=["fdc_id", "description"])
-    food_nutrient_manual_df = pd.read_csv("food_nutrient_manual.csv", usecols=["fdc_id", "nutrient_id", "amount"])
+    food_manual_df = pd.read_csv(DB_DIR / "food_manual.csv", usecols=["fdc_id", "description"])
+    food_nutrient_manual_df = pd.read_csv(DB_DIR / "food_nutrient_manual.csv", usecols=["fdc_id", "nutrient_id", "amount"])
     
 except FileNotFoundError:
     print("Warning: Missing USDA CSV files. Ensure food.csv, food_manual.csv, etc., are in the directory.")
@@ -47,7 +50,7 @@ food_nutrient_filtered = food_nutrient_combined[food_nutrient_combined["fdc_id"]
 # ---------------------------------------------------------
 # 3. Export Merged & Filtered Databases
 # ---------------------------------------------------------
-food_filtered.to_csv("food_filtered.csv", index=False)
-food_nutrient_filtered.to_csv("food_nutrient_filtered.csv", index=False)
+food_filtered.to_csv(DB_DIR / "food_filtered.csv", index=False)
+food_nutrient_filtered.to_csv(DB_DIR / "food_nutrient_filtered.csv", index=False)
 
 print(f"Success! Created filtered databases containing {len(food_filtered)} foods.")

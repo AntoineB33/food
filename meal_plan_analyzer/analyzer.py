@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 
 import pandas as pd
 
@@ -7,6 +8,7 @@ if len(sys.argv) < 2:
     sys.exit(1)
 
 input_file = sys.argv[1]
+DB_DIR = Path(__file__).resolve().parents[1] / "DB"
 
 # ---------------------------------------------------------
 # 1. Target Nutrients & Bounds (From Solver)
@@ -49,7 +51,7 @@ compound_bounds = {
 # 2. Load Databases & User Input
 # ---------------------------------------------------------
 try:
-    food_nutrient_df = pd.read_csv("food_nutrient_filtered.csv")
+    food_nutrient_df = pd.read_csv(DB_DIR / "food_nutrient_filtered.csv")
     diet_df = pd.read_csv(input_file)
 except FileNotFoundError as e:
     print(f"Error loading file: {e}")

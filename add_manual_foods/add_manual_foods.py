@@ -1,11 +1,14 @@
 import os
+from pathlib import Path
 
 import pandas as pd
 
 # Configuration: File paths
-TXT_FILE = "foods_to_add.txt"
-FOOD_CSV = "food.csv"
-MANUAL_CSV = "food_manual.csv"
+ROOT_DIR = Path(__file__).resolve().parents[1]
+DB_DIR = ROOT_DIR / "DB"
+TXT_FILE = Path(__file__).resolve().parent / "foods_to_add.txt"
+FOOD_CSV = DB_DIR / "food.csv"
+MANUAL_CSV = DB_DIR / "food_manual.csv"
 
 def main():
     print("Loading existing databases to find available IDs...")

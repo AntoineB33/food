@@ -1,7 +1,10 @@
 import sys
+from pathlib import Path
 
 import pandas as pd
 import pulp
+
+DB_DIR = Path(__file__).resolve().parents[1] / "DB"
 
 # ---------------------------------------------------------
 # 1. Load and Filter USDA SR Legacy CSVs + Manual CSVs
@@ -10,13 +13,13 @@ print("Loading USDA and custom manual files...")
 
 # Load standard SR Legacy files
 try:
-    food_df = pd.read_csv("food.csv", usecols=["fdc_id", "description"])
-    nutrient_df = pd.read_csv("nutrient.csv", usecols=["id", "name", "unit_name"])
-    food_nutrient_df = pd.read_csv("food_nutrient.csv", usecols=["fdc_id", "nutrient_id", "amount"])
+    food_df = pd.read_csv(DB_DIR / "food.csv", usecols=["fdc_id", "description"])
+    nutrient_df = pd.read_csv(DB_DIR / "nutrient.csv", usecols=["id", "name", "unit_name"])
+    food_nutrient_df = pd.read_csv(DB_DIR / "food_nutrient.csv", usecols=["fdc_id", "nutrient_id", "amount"])
 
     # Load custom manual files
-    food_manual_df = pd.read_csv("food_manual.csv", usecols=["fdc_id", "description"])
-    food_nutrient_manual_df = pd.read_csv("food_nutrient_manual.csv", usecols=["fdc_id", "nutrient_id", "amount"])
+    food_manual_df = pd.read_csv(DB_DIR / "food_manual.csv", usecols=["fdc_id", "description"])
+    food_nutrient_manual_df = pd.read_csv(DB_DIR / "food_nutrient_manual.csv", usecols=["fdc_id", "nutrient_id", "amount"])
 
     # Combine datasets
     food_df = pd.concat([food_df, food_manual_df], ignore_index=True)

@@ -1,6 +1,9 @@
 import sys
+from pathlib import Path
 
 import pandas as pd
+
+DB_DIR = Path(__file__).resolve().parents[1] / "DB"
 
 print("Loading USDA and custom manual files for nutrient audit...")
 
@@ -8,10 +11,10 @@ print("Loading USDA and custom manual files for nutrient audit...")
 # 1. Load Data
 # ---------------------------------------------------------
 try:
-    food_df = pd.read_csv("food.csv", usecols=["fdc_id", "description"])
-    food_nutrient_df = pd.read_csv("food_nutrient.csv", usecols=["fdc_id", "nutrient_id", "amount"])
-    food_manual_df = pd.read_csv("food_manual.csv", usecols=["fdc_id", "description"])
-    food_nutrient_manual_df = pd.read_csv("food_nutrient_manual.csv", usecols=["fdc_id", "nutrient_id", "amount"])
+    food_df = pd.read_csv(DB_DIR / "food.csv", usecols=["fdc_id", "description"])
+    food_nutrient_df = pd.read_csv(DB_DIR / "food_nutrient.csv", usecols=["fdc_id", "nutrient_id", "amount"])
+    food_manual_df = pd.read_csv(DB_DIR / "food_manual.csv", usecols=["fdc_id", "description"])
+    food_nutrient_manual_df = pd.read_csv(DB_DIR / "food_nutrient_manual.csv", usecols=["fdc_id", "nutrient_id", "amount"])
 except FileNotFoundError as e:
     print(f"Error loading files: {e}\nPlease ensure all CSV files are in the current directory.")
     sys.exit(1)
