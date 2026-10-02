@@ -10,39 +10,36 @@ import pyperclip
 def load_daily_needs(filepath):
     """Parses the daily needs CSV to extract Min, Max, and IDs."""
     needs = {}
-    with open(filepath, 'r', encoding='utf-8') as f:
+    # 'utf-8-sig' ignores hidden Excel BOM characters if present
+    with open(filepath, 'r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
         for row in reader:
             raw_id = row.get('id', '').strip()
             
-            # Skip rows where the ID is missing
             if not raw_id:
                 continue
                 
-            # Parse out the integer IDs (handles cases like "629, 621")
             try:
                 nutrient_ids = [int(i.strip()) for i in raw_id.split(',')]
             except ValueError:
-                print(f"Skipping row with invalid ID format: '{raw_id}'")
                 continue
             
-            # Extract min/max, handling empty values
             min_str = row.get('min', '').strip()
             max_str = row.get('max', '').strip()
             
             min_val = float(min_str) if min_str else 0.0
             max_val = float(max_str) if max_str else float('inf')
             
-            # Since names are not in the CSV, use the ID string as the display name
             clean_name = f"Nutrient {raw_id}"
 
             needs[clean_name] = {
                 "ids": nutrient_ids,
                 "min": min_val, 
                 "max": max_val, 
-                "unit": "" # Units are no longer provided in the CSV
+                "unit": ""
             }
     return needs
+
 
 def load_nutrient_db(files):
     """Loads nutrient info into a nested dictionary: {fdc_id: {nutrient_id: amount}}"""
@@ -52,22 +49,29 @@ def load_nutrient_db(files):
             print(f"Warning: {file} not found. Skipping.")
             continue
         
-        with open(file, 'r', encoding='utf-8') as f:
+        # 'utf-8-sig' prevents the \ufeff header bug common with Windows CSVs
+        with open(file, 'r', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)
             for row in reader:
                 fdc_id = str(row.get('fdc_id', row.get('id', ''))).strip()
-                nut_id = int(row.get('nutrient_id', 0))
-                amount = float(row.get('amount', 0))
+                
+                try:
+                    # Safely handle empty cells to prevent script crashes
+                    nut_str = str(row.get('nutrient_id', '0')).strip()
+                    nut_id = int(nut_str) if nut_str else 0
+                    
+                    amt_str = str(row.get('amount', '0')).strip()
+                    amount = float(amt_str) if amt_str else 0.0
+                except ValueError:
+                    continue
                 
                 if fdc_id and nut_id:
                     db[fdc_id][nut_id] = amount
     return db
 
+
 def extract_clipboard_csv(text):
-    """
-    Extracts and strictly validates the expected two-column CSV from the clipboard.
-    Throws ValueError if the format or columns are wrong.
-    """
+    """Extracts and strictly validates the expected two-column CSV from the clipboard."""
     if not text.strip():
         raise ValueError("Clipboard is empty or contains no text.")
         
@@ -83,25 +87,18 @@ def extract_clipboard_csv(text):
     if not rows:
         raise ValueError("The parsed CSV data is empty.")
         
-    # Strictly check column count on the first row
     if len(rows[0]) != 2:
-        raise ValueError(
-            f"CSV Column Mismatch! Expected exactly 2 columns (Food ID, Quantity), "
-            f"but found {len(rows[0])} columns.\nFirst row data: {rows[0]}"
-        )
+        raise ValueError(f"CSV Column Mismatch! Expected exactly 2 columns. Found {len(rows[0])}.")
         
     diet = {}
     data_rows_found = 0
     
     for i, row in enumerate(rows):
         if not row:
-            continue # Skip empty lines
+            continue
             
         if len(row) != 2:
-            raise ValueError(
-                f"Malformed CSV format at row {i+1}: expected 2 columns, but found {len(row)}.\n"
-                f"Row data: {row}"
-            )
+            raise ValueError(f"Malformed CSV format at row {i+1}: expected 2 columns.")
             
         food_id = str(row[0]).strip()
         qty_str = str(row[1]).strip()
@@ -111,38 +108,33 @@ def extract_clipboard_csv(text):
             diet[food_id] = quantity
             data_rows_found += 1
         except ValueError:
-            # If it fails on the first row, it's likely just a header, so we can ignore it
             if i == 0:
                 continue
             else:
-                raise ValueError(
-                    f"Invalid quantity '{qty_str}' at row {i+1}. The quantity must be a valid number.\n"
-                    f"Row data: {row}"
-                )
+                raise ValueError(f"Invalid quantity '{qty_str}' at row {i+1}.")
                 
     if data_rows_found == 0:
         raise ValueError("No valid data rows found in the CSV (only header).")
         
     return diet
 
+
 if __name__ == "__main__":
     # --- Configuration ---
-    daily_need_file = r"DB\daily_need_table.csv"  # Updated extension
+    daily_need_file = r"DB\daily_need_table.csv"
     nutrient_file = r"DB\food_nutrient.csv"
     manual_nutrient_file = r"DB\food_nutrient_manual.csv"
 
+    # IMPORTANT: If your clipboard quantities are servings (not grams), change this to 1.0!
     PORTION_DIVISOR = 100.0 
     
-    # 1. Get diet from clipboard (fails instantly if format is wrong)
     clipboard_content = pyperclip.paste()
     diet = extract_clipboard_csv(clipboard_content)
     
-    # 2. Load Databases
     print("Loading databases...")
     daily_needs = load_daily_needs(daily_need_file)
     nutrient_db = load_nutrient_db([nutrient_file, manual_nutrient_file])
 
-    # 3. Calculate Totals
     daily_totals = defaultdict(float)
     
     for food_id, quantity in diet.items():
@@ -152,14 +144,12 @@ if __name__ == "__main__":
         for nut_id, amount in food_nutrients.items():
             daily_totals[nut_id] += amount * multiplier
 
-    # 4. Compare with dynamic needs and generate report
     report_lines = ["### Nutrition Gap Report\n"]
     lacks = []
     excesses = []
     perfect = []
 
     for name, limits in daily_needs.items():
-        # Sum up all mapped nutrient IDs for this requirement
         total_val = sum(daily_totals[nid] for nid in limits['ids'])
         
         min_v = limits['min']
@@ -175,7 +165,6 @@ if __name__ == "__main__":
         else:
             perfect.append(record)
 
-    # --- NEW CHECK: Throw an error if there is no lack or excess ---
     if not lacks and not excesses:
         raise ValueError("No nutrition lacks or excesses found. The diet perfectly matches the daily needs!")
 
@@ -188,11 +177,11 @@ if __name__ == "__main__":
         report_lines.append("#### 📈 Excesses (Over Maximum):")
         report_lines.extend(excesses)
         report_lines.append("")
-        
-    report_lines.append("#### ✅ On Target:")
-    report_lines.extend(perfect)
 
-    # 5. Output and copy
+    if perfect:
+        report_lines.append("#### ✅ On Target:")
+        report_lines.extend(perfect)
+
     final_report = "\n".join(report_lines)
     pyperclip.copy(final_report)
     print("Calculations complete! The lack/excess report has been copied to your clipboard.")
