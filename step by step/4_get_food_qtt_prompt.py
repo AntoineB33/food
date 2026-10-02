@@ -36,7 +36,7 @@ def append_to_nutrient_manual(csv_string, filepath):
     # Define the exact expected columns
     expected_header = [
         "id", "fdc_id", "nutrient_id", "amount", "data_points",
-        "derivation_id", "min", "max", "median", "footnote", "min_year_acquired"
+        "derivation_id", "min", "max", "median"
     ]
     
     # Extract and normalize the first row to check if columns match exactly
