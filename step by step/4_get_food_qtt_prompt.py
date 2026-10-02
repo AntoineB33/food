@@ -116,7 +116,7 @@ if __name__ == "__main__":
     daily_need_file = r"DB\daily_need_table.txt"
     
     # Text to append underneath the food_manual list for the new prompt
-    my_next_prompt_text = """Provide me with two columns: food ID and quantity. For each food item (including prepared meals) on your menu, use the corresponding ID from SR Legacy 2018 (fdc.nal.usda.gov) and food_manual.csv (an extension of the main food database), and enter the quantity as a unitless number in the food's unit of measurement (from the same database). Do not include ingredients for prepared meals unless they are also listed as individual items on your menu."""
+    my_next_prompt_text = """Provide me with two columns: food ID and quantity. For each food item (including prepared meals) on your menu, use the corresponding ID from SR Legacy 2018 (fdc.nal.usda.gov) and food_manual.csv (an extension of the main food database), and enter the quantity as a number where 1 means 100g. Do not include ingredients for prepared meals unless they are also listed as individual items on your menu."""
 
     # 1. Get the LLM's CSV response from the clipboard
     clipboard_content = pyperclip.paste()
