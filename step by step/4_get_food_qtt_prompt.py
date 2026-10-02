@@ -1,8 +1,10 @@
-import os
 import csv
 import io
-import pyperclip
+import os
 import re
+
+import pyperclip
+
 
 def extract_csv_from_text(text):
     """
