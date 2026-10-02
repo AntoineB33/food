@@ -94,7 +94,6 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
                 descriptions.append(line.strip())
 
     new_records = []
-    csv_string = ""
     
     if descriptions:
         # 5. Get all existing IDs from the databases
@@ -109,14 +108,7 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
             new_records.append([current_id, desc])
             existing_ids.add(current_id) 
             
-        # 7. Format the output as a CSV string
-        output_stream = io.StringIO()
-        writer = csv.writer(output_stream, lineterminator='\n', quoting=csv.QUOTE_MINIMAL)
-        writer.writerow(["fdc_id", "description"])
-        writer.writerows(new_records)
-        csv_string = output_stream.getvalue().strip()
-        
-        # 8. Append the new records to DB\food_manual.csv
+        # 7. Append the new records to DB\food_manual.csv
         try:
             file_exists = os.path.exists(food_manual_path)
             with open(food_manual_path, 'a', encoding='utf-8', newline='') as f_manual:
@@ -128,13 +120,23 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
         except (OSError, UnicodeError) as e:
             print(f"Error writing to {food_manual_path}: {e}")
 
+    # 8. Read the entire content of food_manual.csv to include in the prompt
+    full_manual_content = ""
+    if os.path.exists(food_manual_path):
+        try:
+            with open(food_manual_path, 'r', encoding='utf-8') as f_manual:
+                full_manual_content = f_manual.read().strip()
+        except (OSError, UnicodeError) as e:
+            print(f"Error reading {food_manual_path}: {e}")
+
     # 9. Construct the final text for the clipboard
     parts = []
     if daily_need_text:
         parts.append(daily_need_text)
         
-    if csv_string:
-        parts.append(f"{os.path.basename(food_manual_path).replace('.csv', '')}\n```csv\n{csv_string}\n```")
+    if full_manual_content:
+        # Adds the file name and full CSV content wrapped in markdown block
+        parts.append(f"{os.path.basename(food_manual_path)}\n```csv\n{full_manual_content}\n```")
         
     if constant_text:
         parts.append(constant_text)
@@ -164,6 +166,6 @@ if __name__ == "__main__":
     # Text to append underneath the generated CSV table
     my_constant_text = """For each food item of this list, give a value for all the needed nutrients. Write a text easy to copy in a csv format with those columns:
 "id","fdc_id","nutrient_id","amount","data_points","derivation_id","min","max","median","footnote","min_year_acquired"
-This is supposed to be an extension of food_nutrient.csv from the SR Legacy from fdc.nal.usda.gov. Use the corresponding IDs from SR Legacy 2018 (fdc.nal.usda.gov) and food_manual.csv"""
+This is supposed to be an extension of food_nutrient.csv from the SR Legacy from fdc.nal.usda.gov. Use the corresponding IDs from SR Legacy and food_manual.csv"""
 
     generate_new_food_prompt(database_files, food_manual_file, daily_need_file, my_constant_text)
