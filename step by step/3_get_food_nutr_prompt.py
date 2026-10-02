@@ -1,7 +1,9 @@
-import os
 import csv
 import io
+import os
+
 import pyperclip
+
 
 def get_existing_ids(file_paths):
     """
@@ -95,7 +97,7 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
                 csv_writer.writerow(["fdc_id", "description"])
             csv_writer.writerows(new_records)
         print(f"Successfully appended {len(new_records)} items to '{food_manual_path}'.")
-    except Exception as e:
+    except (OSError, UnicodeError) as e:
         print(f"Error writing to {food_manual_path}: {e}")
 
     # 7. Construct the final text for the clipboard (with backticks around the CSV)
