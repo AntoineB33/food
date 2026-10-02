@@ -122,7 +122,7 @@ if __name__ == "__main__":
 
     # 5. Define the custom text in the main block
     custom_main_text = """
-Is the nutrient composition described in DB\food_nutrient_manual.csv correct? If not, correct it.
+Is the nutrient composition described in DB\food_nutrient_manual.csv correct? If not, write the whole corrected file.
 """
 
     final_output = combined_text + custom_main_text.strip()
