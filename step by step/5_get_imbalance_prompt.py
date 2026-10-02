@@ -198,6 +198,10 @@ if __name__ == "__main__":
         else:
             perfect.append(record)
 
+    # --- NEW CHECK: Throw an error if there is no lack or excess ---
+    if not lacks and not excesses:
+        raise ValueError("No nutrition lacks or excesses found. The diet perfectly matches the daily needs!")
+
     if lacks:
         report_lines.append("#### 📉 Lacks (Under Minimum):")
         report_lines.extend(lacks)
