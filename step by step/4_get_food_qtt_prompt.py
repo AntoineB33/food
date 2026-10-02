@@ -116,19 +116,31 @@ if __name__ == "__main__":
     daily_need_file = r"DB\daily_need_table.txt"
     
     # Text to append underneath the food_manual list for the new prompt
-    my_next_prompt_text = """Provide me with two columns: food ID and quantity. For each food item, use the corresponding ID from SR Legacy 2018 (fdc.nal.usda.gov) and food_manual.csv, and enter the quantity as a unitless number in the food's unit of measurement (from the same database).
-It must be in a csv format, easy to copy."""
+    my_next_prompt_text = """Provide me with two columns: food ID and quantity. For each food item (including prepared meals) on your menu, use the corresponding ID from SR Legacy 2018 (fdc.nal.usda.gov) and food_manual.csv (an extension of the main food database), and enter the quantity as a unitless number in the food's unit of measurement (from the same database). Do not include ingredients for prepared meals unless they are also listed as individual items on your menu."""
 
     # 1. Get the LLM's CSV response from the clipboard
     clipboard_content = pyperclip.paste()
     
-    # 2. Extract the CSV text
-    csv_data = extract_csv_from_text(clipboard_content)
+    # Show the clipboard text to the user
+    print("\n" + "="*40)
+    print("CURRENT CLIPBOARD TEXT:")
+    print("="*40)
+    print(clipboard_content)
+    print("="*40 + "\n")
     
-    # 3. Append and STRICTLY validate the data
-    # (If anything is wrong, a ValueError will be thrown here and stop execution)
-    append_to_nutrient_manual(csv_data, nutrient_manual_file)
+    # Ask the user whether to proceed
+    choice = input("Do you want to process and append the above clipboard text? (y/n): ").strip().lower()
     
+    if choice in ['y', 'yes']:
+        # 2. Extract the CSV text
+        csv_data = extract_csv_from_text(clipboard_content)
+        
+        # 3. Append and STRICTLY validate the data
+        # (If anything is wrong, a ValueError will be thrown here and stop execution)
+        append_to_nutrient_manual(csv_data, nutrient_manual_file)
+    else:
+        print("Skipping clipboard text processing...")
+
     # 4. Generate the next prompt and copy to clipboard
     new_prompt = generate_next_prompt(food_manual_file, daily_need_file, my_next_prompt_text)
     pyperclip.copy(new_prompt)

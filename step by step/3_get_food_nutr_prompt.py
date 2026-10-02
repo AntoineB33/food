@@ -45,61 +45,34 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
     else:
         print(f"Warning: The file '{daily_need_path}' was not found. Continuing without it.")
 
-    # 2. Get clipboard content and analyze for warnings
+    # 2. Get clipboard content and analyze for errors
     clipboard_content = pyperclip.paste()
     normalized_content = clipboard_content.replace('\r\n', '\n').strip('\n')
     lines = normalized_content.split('\n') if normalized_content else []
     
-    warnings = []
     if not normalized_content:
-        warnings.append("Clipboard is empty or contains no valid text.")
-    else:
-        for i, line in enumerate(lines, start=1):
-            if not line or line.isspace():
-                warnings.append(f"Blank line detected at line {i}.")
-            elif line[0].isspace():
-                warnings.append(f"Line {i} starts with a blank character.")
+        raise ValueError("Clipboard is empty or contains no valid text.")
 
-    # 3. Show clipboard content, warnings, and prompt options
-    print("\n--- Clipboard Content ---")
-    print(clipboard_content if clipboard_content.strip() else "[Empty]")
-    print("-------------------------\n")
-    
-    if warnings:
-        print("WARNINGS:")
-        for w in warnings:
-            print(f" - {w}")
-        print() # Extra blank line for readability
-
-    print("Options:")
-    print("1. Proceed (use clipboard text, skipping blank lines)")
-    print("2. Proceed without clipboard text input")
-    print("3. Exit")
-    
-    while True:
-        choice = input("\nEnter your choice (1, 2, or 3): ").strip()
-        if choice in ['1', '2', '3']:
-            break
-        print("Invalid choice. Please enter 1, 2, or 3.")
-
-    if choice == '3':
-        print("Operation cancelled by user.")
-        return
-
-    # 4. Extract descriptions if choice 1 was selected
     descriptions = []
-    if choice == '1':
-        for line in lines:
-            if line.strip(): # Skip totally empty/blank lines during processing
-                descriptions.append(line.strip())
+    for i, line in enumerate(lines, start=1):
+        if not line or line.isspace():
+            raise ValueError(f"Blank line detected at line {i}. Please fix the clipboard input.")
+        if line[0].isspace():
+            raise ValueError(f"Line {i} starts with a blank character. Please fix the clipboard input.")
+        
+        descriptions.append(line.strip())
+
+    print("\n--- Clipboard Content Accepted ---")
+    print(clipboard_content)
+    print("----------------------------------\n")
 
     new_records = []
     
     if descriptions:
-        # 5. Get all existing IDs from the databases
+        # 3. Get all existing IDs from the databases
         existing_ids = get_existing_ids(db_paths)
         
-        # 6. Generate new records with the smallest possible IDs
+        # 4. Generate new records with the smallest possible IDs
         current_id = 1
         for desc in descriptions:
             while current_id in existing_ids:
@@ -108,7 +81,7 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
             new_records.append([current_id, desc])
             existing_ids.add(current_id) 
             
-        # 7. Append the new records to DB\food_manual.csv
+        # 5. Append the new records to DB\food_manual.csv
         try:
             file_exists = os.path.exists(food_manual_path)
             with open(food_manual_path, 'a', encoding='utf-8', newline='') as f_manual:
@@ -120,7 +93,7 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
         except (OSError, UnicodeError) as e:
             print(f"Error writing to {food_manual_path}: {e}")
 
-    # 8. Read the entire content of food_manual.csv to include in the prompt
+    # 6. Read the entire content of food_manual.csv to include in the prompt
     full_manual_content = ""
     if os.path.exists(food_manual_path):
         try:
@@ -129,7 +102,7 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
         except (OSError, UnicodeError) as e:
             print(f"Error reading {food_manual_path}: {e}")
 
-    # 9. Construct the final text for the clipboard
+    # 7. Construct the final text for the clipboard
     parts = []
     if daily_need_text:
         parts.append(daily_need_text)
