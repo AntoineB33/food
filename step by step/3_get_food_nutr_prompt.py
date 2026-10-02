@@ -45,99 +45,108 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
     else:
         print(f"Warning: The file '{daily_need_path}' was not found. Continuing without it.")
 
-    # 2. Get and validate clipboard content
+    # 2. Get clipboard content and analyze for warnings
     clipboard_content = pyperclip.paste()
-    
-    # Normalize line endings to standard newline and strip only the very start/end newlines 
-    # so we don't falsely flag trailing clipboard carriage returns as blank lines.
     normalized_content = clipboard_content.replace('\r\n', '\n').strip('\n')
+    lines = normalized_content.split('\n') if normalized_content else []
     
+    warnings = []
     if not normalized_content:
-        raise ValueError("Clipboard is empty or contains no valid text.")
-        
-    lines = normalized_content.split('\n')
-    descriptions = []
-    
-    for i, line in enumerate(lines, start=1):
-        # Throw an error for blank lines (empty or just spaces)
-        if not line or line.isspace():
-            raise ValueError(f"Invalid format: Blank line detected at line {i}.")
-            
-        # Throw an error if the line starts with a blank character (space, tab, etc.)
-        if line[0].isspace():
-            raise ValueError(f"Invalid format: Line {i} starts with a blank character.")
-            
-        # If it passes validation, add to our list (stripping trailing whitespace for safety)
-        descriptions.append(line.rstrip())
+        warnings.append("Clipboard is empty or contains no valid text.")
+    else:
+        for i, line in enumerate(lines, start=1):
+            if not line or line.isspace():
+                warnings.append(f"Blank line detected at line {i}.")
+            elif line[0].isspace():
+                warnings.append(f"Line {i} starts with a blank character.")
 
-    # 3. Show clipboard content and ask for confirmation
-    print("\n--- Validated Clipboard Content ---")
-    print(normalized_content)
-    print("-----------------------------------\n")
+    # 3. Show clipboard content, warnings, and prompt options
+    print("\n--- Clipboard Content ---")
+    print(clipboard_content if clipboard_content.strip() else "[Empty]")
+    print("-------------------------\n")
     
-    user_confirm = input("Input format is valid. Do you want to proceed? (y/n): ").strip().lower()
-    if user_confirm not in ['y', 'yes']:
+    if warnings:
+        print("WARNINGS:")
+        for w in warnings:
+            print(f" - {w}")
+        print() # Extra blank line for readability
+
+    print("Options:")
+    print("1. Proceed (use clipboard text, skipping blank lines)")
+    print("2. Proceed without clipboard text input")
+    print("3. Exit")
+    
+    while True:
+        choice = input("\nEnter your choice (1, 2, or 3): ").strip()
+        if choice in ['1', '2', '3']:
+            break
+        print("Invalid choice. Please enter 1, 2, or 3.")
+
+    if choice == '3':
         print("Operation cancelled by user.")
         return
 
-    # 4. Get all existing IDs from the databases
-    existing_ids = get_existing_ids(db_paths)
-    
-    # 5. Generate new records with the smallest possible IDs
-    new_records = []
-    current_id = 1
-    
-    for desc in descriptions:
-        # Increment current_id until we find one not in the database
-        while current_id in existing_ids:
-            current_id += 1
-            
-        new_records.append([current_id, desc])
-        existing_ids.add(current_id) # Mark this new ID as used for the next iteration
-        
-    # 6. Format the output as a CSV string
-    output_stream = io.StringIO()
-    writer = csv.writer(output_stream, lineterminator='\n', quoting=csv.QUOTE_MINIMAL)
-    
-    # Write Header
-    writer.writerow(["fdc_id", "description"])
-    # Write Rows
-    writer.writerows(new_records)
-    
-    csv_string = output_stream.getvalue().strip()
-    
-    # 7. Append the new records to DB\food_manual.csv
-    try:
-        # Check if file exists so we know whether to write the header
-        file_exists = os.path.exists(food_manual_path)
-        
-        # 'a' mode appends to the file, newline='' prevents double-spacing on Windows
-        with open(food_manual_path, 'a', encoding='utf-8', newline='') as f_manual:
-            csv_writer = csv.writer(f_manual, quoting=csv.QUOTE_MINIMAL)
-            if not file_exists:
-                csv_writer.writerow(["fdc_id", "description"])
-            csv_writer.writerows(new_records)
-        print(f"Successfully appended {len(new_records)} items to '{food_manual_path}'.")
-    except (OSError, UnicodeError) as e:
-        print(f"Error writing to {food_manual_path}: {e}")
+    # 4. Extract descriptions if choice 1 was selected
+    descriptions = []
+    if choice == '1':
+        for line in lines:
+            if line.strip(): # Skip totally empty/blank lines during processing
+                descriptions.append(line.strip())
 
-    # 8. Construct the final text for the clipboard (with backticks around the CSV)
+    new_records = []
+    csv_string = ""
+    
+    if descriptions:
+        # 5. Get all existing IDs from the databases
+        existing_ids = get_existing_ids(db_paths)
+        
+        # 6. Generate new records with the smallest possible IDs
+        current_id = 1
+        for desc in descriptions:
+            while current_id in existing_ids:
+                current_id += 1
+                
+            new_records.append([current_id, desc])
+            existing_ids.add(current_id) 
+            
+        # 7. Format the output as a CSV string
+        output_stream = io.StringIO()
+        writer = csv.writer(output_stream, lineterminator='\n', quoting=csv.QUOTE_MINIMAL)
+        writer.writerow(["fdc_id", "description"])
+        writer.writerows(new_records)
+        csv_string = output_stream.getvalue().strip()
+        
+        # 8. Append the new records to DB\food_manual.csv
+        try:
+            file_exists = os.path.exists(food_manual_path)
+            with open(food_manual_path, 'a', encoding='utf-8', newline='') as f_manual:
+                csv_writer = csv.writer(f_manual, quoting=csv.QUOTE_MINIMAL)
+                if not file_exists:
+                    csv_writer.writerow(["fdc_id", "description"])
+                csv_writer.writerows(new_records)
+            print(f"Successfully appended {len(new_records)} items to '{food_manual_path}'.")
+        except (OSError, UnicodeError) as e:
+            print(f"Error writing to {food_manual_path}: {e}")
+
+    # 9. Construct the final text for the clipboard
     parts = []
     if daily_need_text:
         parts.append(daily_need_text)
         
-    parts.append(f"{os.path.basename(food_manual_path).replace('.csv', '')}\n```csv\n{csv_string}\n```")
-    
+    if csv_string:
+        parts.append(f"{os.path.basename(food_manual_path).replace('.csv', '')}\n```csv\n{csv_string}\n```")
+        
     if constant_text:
         parts.append(constant_text)
         
     # Join everything with double newlines
     formatted_text = "\n\n".join(parts)
     
-    # Copy to clipboard
-    pyperclip.copy(formatted_text)
-    
-    print("New prompt has been copied to your clipboard.")
+    if formatted_text:
+        pyperclip.copy(formatted_text)
+        print("New prompt has been copied to your clipboard.")
+    else:
+        print("No text generated to copy to clipboard.")
 
 if __name__ == "__main__":
     # --- Configuration ---
@@ -155,6 +164,6 @@ if __name__ == "__main__":
     # Text to append underneath the generated CSV table
     my_constant_text = """For each food item of this list, give a value for all the needed nutrients. Write a text easy to copy in a csv format with those columns:
 "id","fdc_id","nutrient_id","amount","data_points","derivation_id","min","max","median","footnote","min_year_acquired"
-This is supposed to be an extension of food_nutrient.csv from the SR Legacy from fdc.nal.usda.gov."""
+This is supposed to be an extension of food_nutrient.csv from the SR Legacy from fdc.nal.usda.gov. Use the corresponding IDs from SR Legacy 2018 (fdc.nal.usda.gov) and food_manual.csv"""
 
     generate_new_food_prompt(database_files, food_manual_file, daily_need_file, my_constant_text)
