@@ -1,9 +1,7 @@
 import csv
 import io
 import os
-
 import pyperclip
-
 
 def get_existing_ids(file_paths):
     """
@@ -47,22 +45,45 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
     else:
         print(f"Warning: The file '{daily_need_path}' was not found. Continuing without it.")
 
-    # 2. Get clipboard content (the vertical list of food descriptions)
+    # 2. Get and validate clipboard content
     clipboard_content = pyperclip.paste()
-    if not clipboard_content.strip():
-        print("Error: Clipboard is empty or contains no text.")
-        return
+    
+    # Normalize line endings to standard newline and strip only the very start/end newlines 
+    # so we don't falsely flag trailing clipboard carriage returns as blank lines.
+    normalized_content = clipboard_content.replace('\r\n', '\n').strip('\n')
+    
+    if not normalized_content:
+        raise ValueError("Clipboard is empty or contains no valid text.")
         
-    # Split by newline and remove empty lines/extra whitespace
-    descriptions = [line.strip() for line in clipboard_content.split('\n') if line.strip()]
-    if not descriptions:
-        print("Error: No valid food descriptions found in the clipboard.")
+    lines = normalized_content.split('\n')
+    descriptions = []
+    
+    for i, line in enumerate(lines, start=1):
+        # Throw an error for blank lines (empty or just spaces)
+        if not line or line.isspace():
+            raise ValueError(f"Invalid format: Blank line detected at line {i}.")
+            
+        # Throw an error if the line starts with a blank character (space, tab, etc.)
+        if line[0].isspace():
+            raise ValueError(f"Invalid format: Line {i} starts with a blank character.")
+            
+        # If it passes validation, add to our list (stripping trailing whitespace for safety)
+        descriptions.append(line.rstrip())
+
+    # 3. Show clipboard content and ask for confirmation
+    print("\n--- Validated Clipboard Content ---")
+    print(normalized_content)
+    print("-----------------------------------\n")
+    
+    user_confirm = input("Input format is valid. Do you want to proceed? (y/n): ").strip().lower()
+    if user_confirm not in ['y', 'yes']:
+        print("Operation cancelled by user.")
         return
 
-    # 3. Get all existing IDs from the databases
+    # 4. Get all existing IDs from the databases
     existing_ids = get_existing_ids(db_paths)
     
-    # 4. Generate new records with the smallest possible IDs
+    # 5. Generate new records with the smallest possible IDs
     new_records = []
     current_id = 1
     
@@ -74,7 +95,7 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
         new_records.append([current_id, desc])
         existing_ids.add(current_id) # Mark this new ID as used for the next iteration
         
-    # 5. Format the output as a CSV string
+    # 6. Format the output as a CSV string
     output_stream = io.StringIO()
     writer = csv.writer(output_stream, lineterminator='\n', quoting=csv.QUOTE_MINIMAL)
     
@@ -85,7 +106,7 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
     
     csv_string = output_stream.getvalue().strip()
     
-    # 6. Append the new records to DB\food_manual.csv
+    # 7. Append the new records to DB\food_manual.csv
     try:
         # Check if file exists so we know whether to write the header
         file_exists = os.path.exists(food_manual_path)
@@ -100,8 +121,7 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
     except (OSError, UnicodeError) as e:
         print(f"Error writing to {food_manual_path}: {e}")
 
-    # 7. Construct the final text for the clipboard (with backticks around the CSV)
-    # Build a list of the text parts, filtering out any empty ones
+    # 8. Construct the final text for the clipboard (with backticks around the CSV)
     parts = []
     if daily_need_text:
         parts.append(daily_need_text)

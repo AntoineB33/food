@@ -7,17 +7,3 @@ fdc_id,description
 1000001,Vitamin D3 (Lichen)
 1000002,Vitamin B12
 1000003,Creatine monohydrate
-1,Filename: food_manual.csv
-2,```csv
-3,"fdc_id,description"
-4,"999999,""Tofu scramble, with kale and bell peppers, vegan"""
-5,"999998,""Tempeh and roasted vegetable quinoa bowl, vegan"""
-6,"999997,""Pea and rice protein shake with soy milk, vegan"""
-7,"999996,""Seitan and broccoli stir-fry with edamame, vegan"""
-8,"1000000,Algae Oil"
-9,"1000001,Vitamin D3 (Lichen)"
-10,"1000002,Vitamin B12"
-11,"1000003,Creatine monohydrate"
-12,```
-13,Provide me with a list of all food items (including prepared meals) on your menu that are not listed in the SR Legacy 2018 database (fdc.nal.usda.gov) and food_manual.csv. Do not include ingredients for prepared meals unless they are also listed as individual items on your menu.
-14,"The list must be the names of the items, easy to copy."
