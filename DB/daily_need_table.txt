@@ -47,5 +47,3 @@ Molybdenum	45 mcg	2,000 mcg	Extremely high in legumes (beans, lentils, peas).
 Chloride	2,300 mg	3,600 mg	Consumed alongside sodium (table salt).
 Choline	550 mg	3,500 mg	Prioritize soy, quinoa, broccoli, and Brussels sprouts.
 Creatine	3 g	5 g	Exclude from food solver. Supplement daily for musculation.
-
-Give me a vegan meal plan for a day satisfying the daily needs.

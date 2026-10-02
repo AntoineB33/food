@@ -9,6 +9,7 @@ import pandas as pd
 BASE_DIR = Path(__file__).resolve().parent
 DB_DIR = BASE_DIR.parent / "DB"
 input_file = BASE_DIR / "my_diet.csv"
+output_file = BASE_DIR / f"{input_file.stem}_report.txt"
 
 # ---------------------------------------------------------
 # 1. Target Nutrients & Bounds (From Solver)
@@ -53,6 +54,8 @@ compound_bounds = {
 try:
     food_nutrient_df = pd.read_csv(DB_DIR / "food_nutrient_filtered.csv")
     diet_df = pd.read_csv(input_file)
+    food_df = pd.read_csv(DB_DIR / "food_filtered.csv")
+    nutrient_df = pd.read_csv(DB_DIR / "nutrient.csv")
 except FileNotFoundError as e:
     print(f"Error loading file: {e}")
     sys.exit(1)
@@ -67,10 +70,25 @@ if "fdc_id" not in diet_df.columns or "quantity_g" not in diet_df.columns:
 diet_df["fdc_id"] = pd.to_numeric(diet_df["fdc_id"], errors="raise")
 diet_df["quantity_g"] = pd.to_numeric(diet_df["quantity_g"], errors="raise")
 
+# Ensure nutrient IDs can match
+nutrient_df["id"] = pd.to_numeric(nutrient_df["id"], errors="coerce")
+
 # ---------------------------------------------------------
-# 3. Calculate Total Nutrients
+# 3. Create Unit Mappings
 # ---------------------------------------------------------
-# Merge diet with nutrient values
+# Map raw nutrient IDs to their unit names (e.g. 1008 -> 'KCAL')
+id_to_unit = dict(zip(nutrient_df["id"], nutrient_df["unit_name"]))
+
+# Map our readable string names to unit names (e.g. 'calories' -> 'KCAL')
+name_to_unit = {name: id_to_unit.get(nut_id, "g") for nut_id, name in TARGET_NUTRIENTS.items()}
+
+# Add units for compound amino acids (they inherit from their base amino acids)
+name_to_unit["phe_tyr"] = name_to_unit.get("phenylalanine", "g")
+name_to_unit["met_cys"] = name_to_unit.get("methionine", "g")
+
+# ---------------------------------------------------------
+# 4. Calculate Total Nutrients
+# ---------------------------------------------------------
 merged = diet_df.merge(food_nutrient_df, on="fdc_id", how="inner")
 merged = merged[merged["nutrient_id"].isin(TARGET_NUTRIENTS.keys())].copy()
 
@@ -85,11 +103,10 @@ totals = merged.groupby("nutrient_name")["total_amount"].sum().to_dict()
 totals["phe_tyr"] = totals.get("phenylalanine", 0) + totals.get("tyrosine", 0)
 totals["met_cys"] = totals.get("methionine", 0) + totals.get("cysteine", 0)
 
-# Merge bounds for iteration
 all_bounds = {**bounds, **compound_bounds}
 
 # ---------------------------------------------------------
-# 4. Evaluate against Bounds
+# 5. Evaluate against Bounds
 # ---------------------------------------------------------
 lacking = {}
 saturated = {}
@@ -103,20 +120,45 @@ for nutrient, (min_val, max_val) in all_bounds.items():
         saturated[nutrient] = (amount, max_val)
 
 # ---------------------------------------------------------
-# 5. Display Results
+# 6. Generate Report (Console & Text File)
 # ---------------------------------------------------------
-print(f"\n--- NUTRITION ANALYSIS FOR {input_file.name} ---")
+report_lines = []
+report_lines.append(f"--- NUTRITION ANALYSIS FOR {input_file.name} ---")
 
-print("\n🚨 LACKING NUTRIENTS (Below Minimum):")
+# Merge diet with food names to list out the meal plan
+report_lines.append("\n🍽️ FOOD LIST:")
+food_list = diet_df.merge(food_df, on="fdc_id", how="left")
+for _, row in food_list.iterrows():
+    desc = row.get("description", f"Unknown Food ID {row['fdc_id']}")
+    qty = row['quantity_g']
+    report_lines.append(f"  - {qty}g : {desc}")
+
+# Lacking
+report_lines.append("\n🚨 LACKING NUTRIENTS (Below Minimum):")
 if not lacking:
-    print("  None! All minimum targets met.")
+    report_lines.append("  None! All minimum targets met.")
 else:
     for nut, (amt, req) in sorted(lacking.items()):
-        print(f"  - {nut.capitalize():<15} {amt:>7.1f} (Target: ≥ {req})")
+        unit = name_to_unit.get(nut, "units")
+        report_lines.append(f"  - {nut.capitalize():<15} {amt:>7.1f} {unit:<4} (Target: >= {req} {unit})")
 
-print("\n⚠️ SATURATED NUTRIENTS (Exceeded Maximum):")
+# Saturated
+report_lines.append("\n⚠️ SATURATED NUTRIENTS (Exceeded Maximum):")
 if not saturated:
-    print("  None! All upper limits respected.")
+    report_lines.append("  None! All upper limits respected.")
 else:
     for nut, (amt, limit) in sorted(saturated.items()):
-        print(f"  - {nut.capitalize():<15} {amt:>7.1f} (Limit: ≤ {limit})")
+        unit = name_to_unit.get(nut, "units")
+        report_lines.append(f"  - {nut.capitalize():<15} {amt:>7.1f} {unit:<4} (Limit: <= {limit} {unit})")
+
+# Join lines into a single string
+final_report = "\n".join(report_lines)
+
+# Print to console
+print(final_report)
+
+# Write to text file
+with open(output_file, "w", encoding="utf-8") as f:
+    f.write(final_report)
+
+print(f"\n✅ Report successfully saved to: {output_file.name}")

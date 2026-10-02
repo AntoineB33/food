@@ -1,0 +1,69 @@
+--- NUTRITION ANALYSIS FOR my_diet.csv ---
+
+🍽️ FOOD LIST:
+  - 200g : nan
+  - 100g : nan
+  - 50g : nan
+  - 50g : Cereals, oats, regular and quick, not fortified, dry
+  - 14g : Seeds, chia seeds, dried
+  - 74g : nan
+  - 5g : nan
+  - 100g : nan
+  - 185g : nan
+  - 85g : nan
+  - 100g : nan
+  - 50g : nan
+  - 14g : nan
+  - 15g : nan
+  - 10g : nan
+  - 45g : nan
+  - 240g : nan
+  - 118g : nan
+  - 120g : nan
+  - 75g : nan
+  - 135g : nan
+  - 195g : Rice, brown, long-grain, cooked (Includes foods for USDA's Food Distribution Program)
+  - 14g : nan
+  - 15g : nan
+  - 1g : nan
+  - 1g : nan
+  - 1g : nan
+  - 5g : nan
+
+🚨 LACKING NUTRIENTS (Below Minimum):
+  - Calcium           120.2 MG   (Target: >= 1000 MG)
+  - Calories          497.4 KCAL (Target: >= 2350 KCAL)
+  - Carbs              89.6 G    (Target: >= 240 G)
+  - Choline             0.0 UG   (Target: >= 550 UG)
+  - Copper              0.5 MG   (Target: >= 0.9 MG)
+  - Fat                 9.5 G    (Target: >= 65 G)
+  - Fiber              13.0 G    (Target: >= 34 G)
+  - Histidine           0.3 G    (Target: >= 0.766 G)
+  - Iron                4.3 MG   (Target: >= 14.4 MG)
+  - Isoleucine          1.1 G    (Target: >= 1.53 G)
+  - Leucine             0.3 G    (Target: >= 3.0 G)
+  - Lysine              0.6 G    (Target: >= 2.3 G)
+  - Magnesium         191.9 MG   (Target: >= 400 MG)
+  - Met_cys             0.9 G    (Target: >= 1.15 G)
+  - Omega_6             2.6 G    (Target: >= 11.0 G)
+  - Phe_tyr             1.2 G    (Target: >= 1.915 G)
+  - Phosphorus        526.2 MG   (Target: >= 700 MG)
+  - Potassium         405.7 MG   (Target: >= 3400 MG)
+  - Protein            14.2 G    (Target: >= 150 G)
+  - Sodium             13.0 MG   (Target: >= 1500 MG)
+  - Threonine           0.6 G    (Target: >= 1.15 G)
+  - Valine              0.8 G    (Target: >= 2.0 G)
+  - Vitamin_a           0.0 UG   (Target: >= 900 UG)
+  - Vitamin_b1          0.7 MG   (Target: >= 1.2 MG)
+  - Vitamin_b2          0.2 MG   (Target: >= 1.5 MG)
+  - Vitamin_b3          6.8 MG   (Target: >= 16.2 MG)
+  - Vitamin_b5          1.3 MG   (Target: >= 5.0 MG)
+  - Vitamin_b6          0.3 MG   (Target: >= 1.3 MG)
+  - Vitamin_b9         33.5 UG   (Target: >= 400 UG)
+  - Vitamin_c           0.2 MG   (Target: >= 90 MG)
+  - Vitamin_e           0.6 MG   (Target: >= 15 MG)
+  - Vitamin_k           1.4 UG   (Target: >= 120 UG)
+  - Zinc                3.8 MG   (Target: >= 16.5 MG)
+
+⚠️ SATURATED NUTRIENTS (Exceeded Maximum):
+  None! All upper limits respected.
