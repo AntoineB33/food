@@ -140,6 +140,6 @@ if __name__ == "__main__":
     # Text to append underneath the generated CSV table
     my_constant_text = """For each food item of this list, give a value for all the needed nutrients. Write a text easy to copy in a csv format with those columns:
 "id","fdc_id","nutrient_id","amount","data_points","derivation_id","min","max","median"
-This is supposed to be an extension of food_nutrient.csv from the SR Legacy from fdc.nal.usda.gov. Use the corresponding IDs from SR Legacy and food_manual.csv"""
+This is supposed to be an extension of food_nutrient.csv from SR Legacy 2018 from fdc.nal.usda.gov. Use the corresponding IDs from SR Legacy and food_manual.csv"""
 
     generate_new_food_prompt(database_files, food_manual_file, daily_need_file, my_constant_text)

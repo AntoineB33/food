@@ -7,62 +7,40 @@ from collections import defaultdict
 import pyperclip
 
 
-def parse_numeric(val_str):
-    """Extracts numeric values from strings like '2,350 kcal' or handles 'No limit'."""
-    if "No limit" in val_str:
-        return float('inf')
-    match = re.search(r'([\d,\.]+)', val_str)
-    if match:
-        return float(match.group(1).replace(',', ''))
-    return 0.0
-
-def extract_unit(val_str, numeric_val):
-    """Extracts the unit of measurement (e.g., 'kcal', 'mg') from a string."""
-    if "No limit" in val_str:
-        return ""
-    # Remove the numeric part and commas to leave just the unit text
-    unit = val_str.replace(str(numeric_val).replace('.0', ''), '').replace(',', '').strip()
-    return unit
-
 def load_daily_needs(filepath):
-    """Parses the txt file to extract Min, Max, and FDC IDs from brackets [ID1, ID2]."""
+    """Parses the daily needs CSV to extract Min, Max, and IDs."""
     needs = {}
     with open(filepath, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-    
-    for line in lines[1:]: # Skip header
-        if not line.strip(): continue
-        
-        # Split by 2 or more spaces or tabs
-        parts = re.split(r'\s{2,}|\t+', line.strip())
-        if len(parts) >= 3:
-            raw_name = parts[0].strip()
+        reader = csv.DictReader(f)
+        for row in reader:
+            raw_id = row.get('id', '').strip()
             
-            # Look for IDs enclosed in brackets e.g., [1008] or [1218, 1219]
-            id_match = re.search(r'\[([\d,\s]+)\]', raw_name)
-            
-            if not id_match:
-                print(f"Skipping '{raw_name}': No FDC IDs found in brackets (e.g. [1008]).")
+            # Skip rows where the ID is missing
+            if not raw_id:
                 continue
                 
-            # Parse out the integer IDs
-            id_str = id_match.group(1)
-            nutrient_ids = [int(i.strip()) for i in id_str.split(',')]
+            # Parse out the integer IDs (handles cases like "629, 621")
+            try:
+                nutrient_ids = [int(i.strip()) for i in raw_id.split(',')]
+            except ValueError:
+                print(f"Skipping row with invalid ID format: '{raw_id}'")
+                continue
             
-            # Clean the display name by removing the brackets and IDs
-            clean_name = re.sub(r'\s*\[.*?\]\s*', '', raw_name).strip()
+            # Extract min/max, handling empty values
+            min_str = row.get('min', '').strip()
+            max_str = row.get('max', '').strip()
             
-            min_val = parse_numeric(parts[1])
-            max_val = parse_numeric(parts[2])
+            min_val = float(min_str) if min_str else 0.0
+            max_val = float(max_str) if max_str else float('inf')
             
-            # Try to grab unit from min, fallback to max
-            unit = extract_unit(parts[1], min_val) or extract_unit(parts[2], max_val)
+            # Since names are not in the CSV, use the ID string as the display name
+            clean_name = f"Nutrient {raw_id}"
 
             needs[clean_name] = {
                 "ids": nutrient_ids,
                 "min": min_val, 
                 "max": max_val, 
-                "unit": unit
+                "unit": "" # Units are no longer provided in the CSV
             }
     return needs
 
@@ -149,7 +127,7 @@ def extract_clipboard_csv(text):
 
 if __name__ == "__main__":
     # --- Configuration ---
-    daily_need_file = r"DB\daily_need_table.txt"
+    daily_need_file = r"DB\daily_need_table.csv"  # Updated extension
     nutrient_file = r"DB\food_nutrient.csv"
     manual_nutrient_file = r"DB\food_nutrient_manual.csv"
 
@@ -184,12 +162,11 @@ if __name__ == "__main__":
         # Sum up all mapped nutrient IDs for this requirement
         total_val = sum(daily_totals[nid] for nid in limits['ids'])
         
-        unit = limits['unit']
         min_v = limits['min']
         max_v = limits['max']
         
-        max_str = "No limit" if max_v == float('inf') else f"{max_v} {unit}"
-        record = f"- **{name}**: {total_val:.1f} {unit} (Target: {min_v} to {max_str})"
+        max_str = "No limit" if max_v == float('inf') else f"{max_v}"
+        record = f"- **{name}**: {total_val:.1f} (Target: {min_v} to {max_str})"
         
         if total_val < min_v:
             lacks.append(record)
