@@ -106,7 +106,7 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
     if daily_need_text:
         parts.append(daily_need_text)
         
-    parts.append(f"```csv\n{csv_string}\n```")
+    parts.append(f"{os.path.basename(food_manual_path).replace('.csv', '')}\n```csv\n{csv_string}\n```")
     
     if constant_text:
         parts.append(constant_text)
