@@ -126,7 +126,7 @@ if __name__ == "__main__":
     manual_nutrient_file = r"DB\food_nutrient_manual.csv"
 
     # IMPORTANT: If your clipboard quantities are servings (not grams), change this to 1.0!
-    PORTION_DIVISOR = 100.0 
+    PORTION_DIVISOR = 1.0
     
     clipboard_content = pyperclip.paste()
     diet = extract_clipboard_csv(clipboard_content)

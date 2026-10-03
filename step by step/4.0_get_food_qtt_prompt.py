@@ -111,7 +111,7 @@ def generate_next_prompt(food_manual_path, daily_need_path, constant_text):
 
 if __name__ == "__main__":
     # --- Configuration ---
-    nutrient_manual_file = r"DB\food_nutrient_manual.csv"
+    food_nutrient_manual_file = r"DB\food_nutrient_manual.csv"
     food_manual_file = r"DB\food_manual.csv"
     daily_need_file = r"DB\daily_need_table.txt"
     
@@ -137,7 +137,7 @@ if __name__ == "__main__":
         
         # 3. Append and STRICTLY validate the data
         # (If anything is wrong, a ValueError will be thrown here and stop execution)
-        append_to_nutrient_manual(csv_data, nutrient_manual_file)
+        append_to_nutrient_manual(csv_data, food_nutrient_manual_file)
     else:
         print("Skipping clipboard text processing...")
 
