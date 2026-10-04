@@ -42,9 +42,9 @@ def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, consta
             with open(daily_need_path, 'r', encoding='utf-8') as f:
                 daily_need_text = f.read().strip()
         except (OSError, UnicodeError) as e:
-            print(f"Error reading {daily_need_path}: {e}")
+            raise RuntimeError(f"Error reading {daily_need_path}: {e}")
     else:
-        print(f"Warning: The file '{daily_need_path}' was not found. Continuing without it.")
+        raise RuntimeError(f"Warning: The file '{daily_need_path}' was not found. Continuing without it.")
 
     # 2. Get clipboard content and analyze for errors
     clipboard_content = pyperclip.paste()
@@ -136,6 +136,8 @@ if __name__ == "__main__":
     
     # Path to the daily need table
     daily_need_file = r"DB\daily_need_table.txt"
+    
+    last_checked_file = r"step by step bats\last_checked_food.txt"
     
     # Text to append underneath the generated CSV table
     my_constant_text = """For each food item of this list, give a value for all the needed nutrients. Write a text easy to copy in a csv format with those columns:

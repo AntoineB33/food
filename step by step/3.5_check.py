@@ -20,11 +20,36 @@ def get_full_file_content(filepath):
     return f"[File not found: {filepath}]"
 
 if __name__ == "__main__":
+    # 0. Read and validate clipboard input FIRST
+    try:
+        clipboard_text = pyperclip.paste().strip()
+    except pyperclip.PyperclipException:
+        raise RuntimeError("Could not read from the clipboard.")
+
+    if not clipboard_text:
+        raise ValueError("Clipboard is empty. Please copy a valid CSV before running the script.")
+
+    # Validate CSV and required columns
+    required_columns = {'id', 'fdc_id', 'nutrient_id', 'amount', 'data_points', 'derivation_id', 'min', 'max', 'median'}
+    try:
+        f_in = io.StringIO(clipboard_text)
+        reader = csv.reader(f_in)
+        header = next(reader)
+        header_cleaned = [col.strip() for col in header]
+        
+        missing_cols = required_columns - set(header_cleaned)
+        if missing_cols:
+            raise ValueError(f"Clipboard text is missing required CSV columns: {', '.join(missing_cols)}")
+    except StopIteration:
+        raise ValueError("Clipboard text does not contain a valid CSV header.")
+    except Exception as e:
+        if isinstance(e, ValueError):
+            raise
+        raise ValueError("Clipboard text could not be parsed as CSV.") from e
+
     # 1. Define file paths
     last_checked_path = Path(r"step by step bats\last_checked_food.txt")
     food_manual_path = Path(r"DB\food_manual.csv")
-    food_nutrient_path = Path(r"DB\food_nutrient_manual.csv")
-    nutrient_path = Path(r"DB\nutrient.csv")
 
     # 2. Check if the target food file has content
     target_food = None
@@ -35,7 +60,7 @@ if __name__ == "__main__":
 
     combined_text = ""
 
-    # 3. Process the food and nutrient manual files
+    # 3. Process the food manual file
     if not target_food:
         # --- PATH A: last_checked_food.txt is empty or missing (Take whole files) ---
         print("No specific food requested (file is empty). Taking whole files.")
@@ -43,10 +68,6 @@ if __name__ == "__main__":
         combined_text += f"--- START OF {food_manual_path} ---\n"
         combined_text += get_full_file_content(food_manual_path)
         combined_text += f"\n--- END OF {food_manual_path} ---\n\n"
-        
-        combined_text += f"--- START OF {food_nutrient_path} ---\n"
-        combined_text += get_full_file_content(food_nutrient_path)
-        combined_text += f"\n--- END OF {food_nutrient_path} ---\n\n"
         
     else:
         # --- PATH B: Target food provided (Filter the files) ---
@@ -58,7 +79,6 @@ if __name__ == "__main__":
             raise FileNotFoundError(f"Required file not found: {food_manual_path}")
 
         filtered_foods = []
-        valid_food_ids = set()
         found_food = False
 
         with food_manual_path.open('r', encoding='utf-8') as f:
@@ -66,7 +86,6 @@ if __name__ == "__main__":
             try:
                 food_header = next(reader)
                 filtered_foods.append(food_header)
-                id_col_idx = food_header.index('fdc_id') if 'fdc_id' in food_header else 0
             except StopIteration:
                 raise ValueError(f"{food_manual_path} is empty.")
 
@@ -76,8 +95,6 @@ if __name__ == "__main__":
                 
                 if found_food:
                     filtered_foods.append(row)
-                    if len(row) > id_col_idx:
-                        valid_food_ids.add(row[id_col_idx])
 
         if not found_food:
             raise ValueError(f"Food description '{target_food}' was not found in {food_manual_path}.")
@@ -86,50 +103,21 @@ if __name__ == "__main__":
         combined_text += rows_to_csv_string(filtered_foods)
         combined_text += f"--- END OF {food_manual_path} ---\n\n"
 
-        # Filter DB\food_nutrient_manual.csv
-        if not food_nutrient_path.exists():
-            raise FileNotFoundError(f"Required file not found: {food_nutrient_path}")
+    # 4. Insert the clipboard content (Replacing food_nutrient_manual.csv)
+    combined_text += "--- START OF the suggested nutrient composition ---\n"
+    combined_text += clipboard_text
+    combined_text += "\n--- END OF the suggested nutrient composition ---\n\n"
 
-        filtered_nutrients = []
-        with food_nutrient_path.open('r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            try:
-                nut_header = next(reader)
-                filtered_nutrients.append(nut_header)
-                
-                # Figure out ID column index safely
-                if 'fdc_id' in nut_header:
-                    fn_id_col = nut_header.index('fdc_id')
-                elif 'food_id' in nut_header:
-                    fn_id_col = nut_header.index('food_id')
-                else:
-                    fn_id_col = 1 if len(nut_header) > 1 else 0
-            except StopIteration:
-                pass 
-
-            for row in reader:
-                if len(row) > fn_id_col and row[fn_id_col] in valid_food_ids:
-                    filtered_nutrients.append(row)
-
-        combined_text += f"--- START OF {food_nutrient_path} ---\n"
-        combined_text += rows_to_csv_string(filtered_nutrients)
-        combined_text += f"--- END OF {food_nutrient_path} ---\n\n"
-
-    # 4. Add the full nutrient.csv (always included entirely)
-    combined_text += f"--- START OF {nutrient_path} ---\n"
-    combined_text += get_full_file_content(nutrient_path)
-    combined_text += f"\n--- END OF {nutrient_path} ---\n\n"
-
-    # 5. Define the custom text in the main block
+    # 6. Define the custom text in the main block
     custom_main_text = """
-Is the nutrient composition described in DB\food_nutrient_manual.csv correct? If not, write the whole corrected file.
+Is the nutrient composition correct? If not, write the whole corrected csv.
 """
 
     final_output = combined_text + custom_main_text.strip()
 
-    # 6. Write to clipboard
+    # 7. Write back to clipboard
     try:
         pyperclip.copy(final_output)
-        print("Successfully copied data to the clipboard!")
+        print("Successfully copied the final prompt to the clipboard!")
     except pyperclip.PyperclipException:
         print("Error: Could not find a copy/paste mechanism for your system.")
