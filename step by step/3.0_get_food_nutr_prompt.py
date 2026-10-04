@@ -1,147 +1,87 @@
-import csv
-import os
+from common import (
+    FOOD_FILE,
+    FOOD_MANUAL_FILE,
+    FOOD_MANUAL_HEADER,
+    NUTRIENT_ID_NOTE,
+    append_csv_rows,
+    confirm,
+    daily_need_block,
+    food_manual_block,
+    get_clipboard,
+    load_food_manual,
+    read_csv,
+    set_clipboard,
+    unchecked_foods,
+)
 
-import pyperclip
+PROMPT = f"""For each food item of this list, give a value for all the needed nutrients. Write a text easy to copy in a csv format with those columns:
+"id","fdc_id","nutrient_id","amount","data_points","derivation_id","min","max","median"
+This is supposed to be an extension of food_nutrient.csv from SR Legacy 2018 from fdc.nal.usda.gov. Use the corresponding IDs from SR Legacy and food_manual.csv
+{NUTRIENT_ID_NOTE}"""
 
 
-def get_existing_ids(file_paths):
-    """
-    Reads the provided CSV files and extracts all existing fdc_ids into a set.
-    """
-    existing_ids = set()
-    
-    for path in file_paths:
-        if not os.path.exists(path):
-            print(f"Warning: The file '{path}' was not found. Skipping...")
-            continue
-            
-        try:
-            with open(path, 'r', encoding='utf-8') as file:
-                reader = csv.reader(file)
-                # Try to get the header to find the fdc_id column index
-                header = next(reader, None)
-                if not header:
-                    continue
-                
-                # Default to column 0, but check if header explicitly names it
-                id_index = header.index("fdc_id") if "fdc_id" in header else 0
-                
-                for row in reader:
-                    if row and len(row) > id_index and row[id_index].isdigit():
-                        existing_ids.add(int(row[id_index]))
-        except (OSError, UnicodeError) as e:
-            print(f"Error reading {path}: {e}")
-            
-    return existing_ids
-
-def generate_new_food_prompt(db_paths, food_manual_path, daily_need_path, constant_text):
-    # 1. Read the daily need table text
-    daily_need_text = ""
-    if os.path.exists(daily_need_path):
-        try:
-            with open(daily_need_path, 'r', encoding='utf-8') as f:
-                daily_need_text = f.read().strip()
-        except (OSError, UnicodeError) as e:
-            raise RuntimeError(f"Error reading {daily_need_path}: {e}")
-    else:
-        raise RuntimeError(f"Warning: The file '{daily_need_path}' was not found. Continuing without it.")
-
-    # 2. Get clipboard content and analyze for errors
-    clipboard_content = pyperclip.paste()
-    normalized_content = clipboard_content.replace('\r\n', '\n').strip('\n')
-    lines = normalized_content.split('\n') if normalized_content else []
-    
-    if not normalized_content:
-        raise ValueError("Clipboard is empty or contains no valid text.")
-
+def parse_food_list(text):
+    """Returns the food descriptions of the clipboard, one per line."""
     descriptions = []
-    for i, line in enumerate(lines, start=1):
+    for i, line in enumerate(text.strip("\n").split("\n"), start=1):
         if not line or line.isspace():
             raise ValueError(f"Blank line detected at line {i}. Please fix the clipboard input.")
         if line[0].isspace():
             raise ValueError(f"Line {i} starts with a blank character. Please fix the clipboard input.")
-        
+        if line.strip().lower() in (d.lower() for d in descriptions):
+            raise ValueError(f"'{line.strip()}' is listed twice (line {i}). Please fix the clipboard input.")
         descriptions.append(line.strip())
+    return descriptions
 
-    print("\n--- Clipboard Content Accepted ---")
-    print(clipboard_content)
-    print("----------------------------------\n")
 
+def get_existing_ids(foods):
+    """Returns the fdc_ids already used by SR Legacy and food_manual.csv."""
+    header, rows = read_csv(FOOD_FILE)
+    id_index = header.index("fdc_id")
+    return {int(row[id_index]) for row in rows} | {fdc_id for fdc_id, _ in foods}
+
+
+def add_new_foods(descriptions, foods):
+    """Appends the foods that are not in food_manual.csv yet, with the smallest free IDs."""
+    known = {description.lower() for _, description in foods}
+    for description in descriptions:
+        if description.lower() in known:
+            print(f"Already in {FOOD_MANUAL_FILE.name}, skipped: {description}")
+    descriptions = [d for d in descriptions if d.lower() not in known]
+
+    existing_ids = get_existing_ids(foods)
     new_records = []
-    
-    if descriptions:
-        # 3. Get all existing IDs from the databases
-        existing_ids = get_existing_ids(db_paths)
-        
-        # 4. Generate new records with the smallest possible IDs
-        current_id = 1
-        for desc in descriptions:
-            while current_id in existing_ids:
-                current_id += 1
-                
-            new_records.append([current_id, desc])
-            existing_ids.add(current_id) 
-            
-        # 5. Append the new records to DB\food_manual.csv
-        try:
-            file_exists = os.path.exists(food_manual_path)
-            with open(food_manual_path, 'a', encoding='utf-8', newline='') as f_manual:
-                csv_writer = csv.writer(f_manual, quoting=csv.QUOTE_MINIMAL)
-                if not file_exists:
-                    csv_writer.writerow(["fdc_id", "description"])
-                csv_writer.writerows(new_records)
-            print(f"Successfully appended {len(new_records)} items to '{food_manual_path}'.")
-        except (OSError, UnicodeError) as e:
-            print(f"Error writing to {food_manual_path}: {e}")
+    current_id = 1
+    for description in descriptions:
+        while current_id in existing_ids:
+            current_id += 1
+        new_records.append([current_id, description])
+        existing_ids.add(current_id)
 
-    # 6. Read the entire content of food_manual.csv to include in the prompt
-    full_manual_content = ""
-    if os.path.exists(food_manual_path):
-        try:
-            with open(food_manual_path, 'r', encoding='utf-8') as f_manual:
-                full_manual_content = f_manual.read().strip()
-        except (OSError, UnicodeError) as e:
-            print(f"Error reading {food_manual_path}: {e}")
+    if new_records:
+        append_csv_rows(FOOD_MANUAL_FILE, FOOD_MANUAL_HEADER, new_records)
+    print(f"Successfully appended {len(new_records)} items to '{FOOD_MANUAL_FILE}'.")
 
-    # 7. Construct the final text for the clipboard
-    parts = []
-    if daily_need_text:
-        parts.append(daily_need_text)
-        
-    if full_manual_content:
-        # Adds the file name and full CSV content wrapped in markdown block
-        parts.append(f"{os.path.basename(food_manual_path)}\n```csv\n{full_manual_content}\n```")
-        
-    if constant_text:
-        parts.append(constant_text)
-        
-    # Join everything with double newlines
-    formatted_text = "\n\n".join(parts)
-    
-    if formatted_text:
-        pyperclip.copy(formatted_text)
-        print("New prompt has been copied to your clipboard.")
-    else:
-        print("No text generated to copy to clipboard.")
 
 if __name__ == "__main__":
-    # --- Configuration ---
-    food_manual_file = r"DB\food_manual.csv"
-    
-    # Paths to check for existing IDs
-    database_files = [
-        r"DB\food.csv",
-        food_manual_file
-    ]
-    
-    # Path to the daily need table
-    daily_need_file = r"DB\daily_need_table.txt"
-    
-    last_checked_file = r"step by step bats\last_checked_food.txt"
-    
-    # Text to append underneath the generated CSV table
-    my_constant_text = """For each food item of this list, give a value for all the needed nutrients. Write a text easy to copy in a csv format with those columns:
-"id","fdc_id","nutrient_id","amount","data_points","derivation_id","min","max","median"
-This is supposed to be an extension of food_nutrient.csv from SR Legacy 2018 from fdc.nal.usda.gov. Use the corresponding IDs from SR Legacy and food_manual.csv"""
+    # 1. Get the food list answered to the prompt of step 2.0 from the clipboard
+    clipboard_content = get_clipboard()
 
-    generate_new_food_prompt(database_files, food_manual_file, daily_need_file, my_constant_text)
+    print("\n" + "=" * 40)
+    print("CURRENT CLIPBOARD TEXT:")
+    print("=" * 40)
+    print(clipboard_content)
+    print("=" * 40 + "\n")
+
+    # 2. Append the new foods to food_manual.csv
+    if confirm("Do you want to add the above food list to food_manual.csv?"):
+        add_new_foods(parse_food_list(clipboard_content), load_food_manual())
+    else:
+        print("Skipping clipboard text processing...")
+
+    # 3. Ask for the nutrients of the foods that are not checked yet
+    foods = unchecked_foods(load_food_manual())
+    if not foods:
+        raise ValueError(f"Every food of {FOOD_MANUAL_FILE.name} is already checked: no nutrient to ask for.")
+
+    set_clipboard(f"{daily_need_block()}\n\n{food_manual_block(foods)}\n\n{PROMPT}")
