@@ -26,14 +26,13 @@ if __name__ == "__main__":
     try:
         diet = parse_diet_csv(food_qtt)
         resolved = describe_diet(diet)
+        # Same verification as step 5.0: every food must have its nutrients in the databases
+        load_diet_nutrients(diet)
     except ValueError as e:
-        # The error is Gemini's: give it back to Gemini instead of asking for a check
+        # Give the error back to Gemini instead of asking for a check
         set_clipboard(f"{ERROR_PROMPT}\n{e}\n\n{FOOD_QTT_PROMPT}")
         print("It tells Gemini about the error below: paste it to Gemini instead of the checker.")
         raise
-
-    # Same verification as step 5.0: every food must have its nutrients in the databases
-    load_diet_nutrients(diet)
 
     set_clipboard(
         f"{daily_need_block()}\n\n{food_manual_block(load_food_manual())}\n\n{FOOD_QTT_PROMPT}"
