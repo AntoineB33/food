@@ -31,7 +31,8 @@ FOOD_NUTRIENT_HEADER = [
 FOOD_LIST_PROMPT = """Provide me with a list of all food items (including prepared meals) on your menu that are not listed in the SR Legacy 2018 database (fdc.nal.usda.gov) and food_manual.csv. Do not include ingredients for prepared meals unless they are also listed as individual items on your menu.
 The list must be the names of the items, easy to copy."""
 
-FOOD_QTT_PROMPT = """Write a text easy to copy in a csv format with two columns: food ID and quantity. For each food item (including prepared meals) on your menu, use the corresponding ID from SR Legacy 2018 (fdc.nal.usda.gov) and food_manual.csv (an extension of the main food database), and enter the quantity as a number where 1 means 100g. Do not include ingredients for prepared meals unless they are also listed as individual items on your menu."""
+FOOD_QTT_PROMPT = """Write a text easy to copy in a csv format with two columns: food ID and quantity. For each food item (including prepared meals) on your menu, use the corresponding ID from SR Legacy 2018 (fdc.nal.usda.gov) and food_manual.csv (an extension of the main food database), and enter the quantity as a number where 1 means 100g. Do not include ingredients for prepared meals unless they are also listed as individual items on your menu.
+The food ID of a SR Legacy food is its fdc_id (between 167512 and 175304), not its NDB number."""
 
 
 # Shared by the nutrient prompt (step 3.0) and its check (step 3.5)
@@ -162,6 +163,47 @@ def unchecked_foods(foods):
     if not positions:
         raise ValueError(f"Food description '{marker}' ({LAST_CHECKED_FILE}) was not found in {FOOD_MANUAL_FILE}.")
     return foods[positions[-1] + 1:]
+
+
+def describe_diet(diet):
+    """Returns the diet as rows of [fdc_id, description, quantity]; raises on the IDs that are in no food database."""
+    header, rows = read_csv(FOOD_FILE)
+    id_col, description_col = header.index("fdc_id"), header.index("description")
+    descriptions = {int(row[id_col]): row[description_col] for row in rows}
+    descriptions.update(load_food_manual())
+
+    unknown = [fdc_id for fdc_id in diet if fdc_id not in descriptions]
+    if unknown:
+        raise ValueError(
+            f"The food IDs {unknown} are neither in {FOOD_FILE.name} (SR Legacy fdc_id) nor in {FOOD_MANUAL_FILE.name}."
+        )
+    return [[fdc_id, descriptions[fdc_id], f"{quantity:g}"] for fdc_id, quantity in diet.items()]
+
+
+def load_diet_nutrients(diet):
+    """Returns the nutrients of the foods of the diet as {fdc_id: {nutrient_id: amount}}.
+
+    Raises on the IDs that are in no food database, and on the foods without any nutrient.
+    """
+    descriptions = {fdc_id: description for fdc_id, description, _ in describe_diet(diet)}
+
+    print("Loading databases...")
+    db = {}
+    for file in (FOOD_NUTRIENT_FILE, FOOD_NUTRIENT_MANUAL_FILE):
+        # 'utf-8-sig' prevents the ﻿ header bug common with Windows CSVs
+        with open(file, "r", encoding="utf-8-sig", newline="") as f:
+            for line, row in enumerate(csv.DictReader(f), start=2):
+                try:
+                    fdc_id = int(row["fdc_id"])
+                    if fdc_id in diet:
+                        db.setdefault(fdc_id, {})[int(row["nutrient_id"])] = float(row["amount"])
+                except (KeyError, TypeError, ValueError) as e:
+                    raise ValueError(f"Malformed row {line} in {file}: {row}") from e
+
+    without_nutrient = [f"{fdc_id} ({descriptions[fdc_id]})" for fdc_id in diet if fdc_id not in db]
+    if without_nutrient:
+        raise ValueError(f"No nutrient in the databases for the foods: {', '.join(without_nutrient)}.")
+    return db
 
 
 def food_manual_block(foods):

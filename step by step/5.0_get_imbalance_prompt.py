@@ -1,11 +1,9 @@
-import csv
 from collections import defaultdict
 
 from common import (
-    FOOD_NUTRIENT_FILE,
-    FOOD_NUTRIENT_MANUAL_FILE,
     get_clipboard,
     load_daily_needs,
+    load_diet_nutrients,
     parse_diet_csv,
     set_clipboard,
 )
@@ -14,22 +12,6 @@ from common import (
 PORTION_DIVISOR = 1.0
 
 PROMPT = "Adjust the menu to fix these lacks and excesses."
-
-
-def load_nutrient_db(files, fdc_ids):
-    """Loads the nutrients of the given foods into a nested dictionary: {fdc_id: {nutrient_id: amount}}"""
-    db = defaultdict(dict)
-    for file in files:
-        # 'utf-8-sig' prevents the ﻿ header bug common with Windows CSVs
-        with open(file, "r", encoding="utf-8-sig", newline="") as f:
-            for line, row in enumerate(csv.DictReader(f), start=2):
-                try:
-                    fdc_id = int(row["fdc_id"])
-                    if fdc_id in fdc_ids:
-                        db[fdc_id][int(row["nutrient_id"])] = float(row["amount"])
-                except (KeyError, TypeError, ValueError) as e:
-                    raise ValueError(f"Malformed row {line} in {file}: {row}") from e
-    return db
 
 
 def build_report(daily_needs, daily_totals):
@@ -68,14 +50,8 @@ def build_report(daily_needs, daily_totals):
 if __name__ == "__main__":
     # 1. Get the checked quantity csv (steps 4.0 and 4.5) from the clipboard
     diet = parse_diet_csv(get_clipboard())
-
-    print("Loading databases...")
+    nutrient_db = load_diet_nutrients(diet)
     daily_needs = load_daily_needs()
-    nutrient_db = load_nutrient_db([FOOD_NUTRIENT_FILE, FOOD_NUTRIENT_MANUAL_FILE], set(diet))
-
-    unknown = [fdc_id for fdc_id in diet if fdc_id not in nutrient_db]
-    if unknown:
-        raise ValueError(f"No nutrient found for the food IDs {unknown}.")
 
     # 2. Sum the nutrients of the whole diet
     daily_totals = defaultdict(float)
