@@ -41,7 +41,7 @@ The food ID of a SR Legacy food is its fdc_id (between 167512 and 175304), not i
 # Start of the prompt a check step gives back to Gemini when it finds an error itself
 ERROR_PROMPT = "Your csv output is incorrect, write the whole corrected csv. The error is:"
 
-# Shared by the nutrient prompt (step 3.0) and its check (step 3.5)
+# Given with every request for a food_nutrient csv
 NUTRIENT_ID_NOTE = """When a row of daily_need_table.csv has several IDs (e.g. "1278, 1272"), the need is the sum of those nutrients: each of them must still have its own row with its single nutrient_id and its own amount. Never write a combined ID or a summed amount in the csv."""
 
 
@@ -300,15 +300,20 @@ def save_to_nutrient_manual(rows):
 # ---------------------------------------------------------
 # daily_need_table.csv
 # ---------------------------------------------------------
+def load_nutrients():
+    """Returns the SR Legacy nutrients as {id: (name, unit)}."""
+    header, rows = read_csv(NUTRIENT_FILE)
+    id_col, name_col, unit_col = (header.index(col) for col in ("id", "name", "unit_name"))
+    return {_to_int(row[id_col], f"id in {NUTRIENT_FILE}"): (row[name_col], row[unit_col]) for row in rows}
+
+
 def load_daily_needs():
     """Returns the daily needs as a list of {ids, name, unit, min, max}.
 
     A need can cover several nutrients ("1278, 1272"): their amounts are summed.
     'ids' is empty for the rows without nutrient ID. 'max' is None when there is no limit.
     """
-    header, rows = read_csv(NUTRIENT_FILE)
-    id_col, name_col, unit_col = (header.index(col) for col in ("id", "name", "unit_name"))
-    nutrients = {_to_int(row[id_col], f"id in {NUTRIENT_FILE}"): (row[name_col], row[unit_col]) for row in rows}
+    nutrients = load_nutrients()
 
     header, rows = read_csv(DAILY_NEED_FILE)
     check_header(header, ["id", "name", "min", "max"], DAILY_NEED_FILE)
@@ -400,6 +405,7 @@ def parse_ingredient_csv(text, known_fdc_ids, sr_legacy_ids):
         raise ValueError("No data rows found in the clipboard CSV (only header).")
 
     ingredients = {}
+    not_in_sr_legacy = []
     for line, row in enumerate(rows, start=2):
         if len(row) != len(FOOD_INGREDIENT_HEADER):
             raise ValueError(
@@ -412,15 +418,19 @@ def parse_ingredient_csv(text, known_fdc_ids, sr_legacy_ids):
         if fdc_id not in known_fdc_ids:
             raise ValueError(f"Unexpected fdc_id {fdc_id} at row {line}. Expected one of {sorted(known_fdc_ids)}.")
         if ingredient_id not in sr_legacy_ids:
-            raise ValueError(
-                f"The ingredient_fdc_id {ingredient_id} at row {line} is not a SR Legacy fdc_id "
-                f"(between 167512 and 175304, not a NDB number)."
-            )
+            not_in_sr_legacy.append(f"- row {line}: {ingredient_id}")
         if quantity <= 0:
             raise ValueError(f"Invalid quantity {quantity} at row {line}.")
         if ingredient_id in ingredients.setdefault(fdc_id, {}):
             raise ValueError(f"The ingredient {ingredient_id} is given twice for the food {fdc_id} (row {line}).")
         ingredients[fdc_id][ingredient_id] = quantity
+
+    # All of them at once, so that the LLM corrects them in one go
+    if not_in_sr_legacy:
+        raise ValueError(
+            "Those ingredient_fdc_id do not exist in SR Legacy 2018 (a SR Legacy fdc_id is between 167512 "
+            "and 175304, it is not a NDB number):\n" + "\n".join(not_in_sr_legacy)
+        )
     return ingredients
 
 

@@ -14,7 +14,7 @@ from common import (
 if __name__ == "__main__":
     foods = load_food_manual()
 
-    # 1. Get the checked nutrient csv (steps 3.0 and 3.5) from the clipboard
+    # 1. Get the checked nutrient csv (step 2.7) from the clipboard
     clipboard_content = get_clipboard()
 
     print("\n" + "=" * 40)

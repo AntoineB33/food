@@ -4,6 +4,7 @@ from common import (
     FOOD_INGREDIENT_MANUAL_FILE,
     FOOD_MANUAL_FILE,
     FOOD_NUTRIENT_HEADER,
+    FOOD_NUTRIENT_MANUAL_FILE,
     NUTRIENT_ID_NOTE,
     check_header,
     daily_need_block,
@@ -24,7 +25,8 @@ from common import (
 )
 
 PROMPT = f"""The nutrient composition above was computed as the simple sum of the nutrients of the ingredients of each food item: for 100g of the food item, the amount of each ingredient times its SR Legacy value. A nutrient that SR Legacy does not give for an ingredient counts as 0.
-Is it the real nutrient composition of those food items (cooking, fermentation, missing SR Legacy values, ...)? If not, write the whole corrected csv, with the same columns.
+Check it and improve it if necessary: the real composition may not be a simple sum (cooking, fermentation, values missing in SR Legacy, ...).
+Write the whole csv, corrected or not, as a text easy to copy with the same columns.
 {NUTRIENT_ID_NOTE}"""
 
 
@@ -82,14 +84,14 @@ if __name__ == "__main__":
         print("It tells Gemini about the error below: paste it to Gemini.")
         raise
 
-    without_ingredient = [description for fdc_id, description in foods if fdc_id not in ingredients]
-    if without_ingredient:
-        print(f"No ingredient given, nutrients left to step 3.0: {', '.join(without_ingredient)}")
-
     # 3. Compute the nutrients before writing anything, then update both DB files
     rows, without_data = sum_nutrients(ingredients)
     save_to_ingredient_manual(ingredients)
     rows = save_to_nutrient_manual(rows)
+
+    # The foods still without any nutrient: no ingredient given, now or before
+    with_nutrients = {int(row[1]) for row in read_csv(FOOD_NUTRIENT_MANUAL_FILE)[1]}
+    without_nutrients = [food for food in foods if food[0] not in with_nutrients]
 
     # 4. Ask whether the sum is the real composition
     ingredient_rows = [
@@ -97,15 +99,25 @@ if __name__ == "__main__":
         for fdc_id, food_ingredients in ingredients.items() for ingredient_id, quantity in food_ingredients.items()
     ]
     ingredient_header = ["fdc_id", "ingredient_fdc_id", "ingredient_description", "quantity"]
-    notes = "".join(
-        f"\n- food {fdc_id}: nutrient_id {', '.join(map(str, nutrient_ids))}"
-        for fdc_id, nutrient_ids in without_data.items()
-    )
-    set_clipboard(
+    prompt = (
         f"{daily_need_block()}\n\n"
-        f"{food_manual_block([food for food in foods if food[0] in ingredients])}\n\n"
+        f"{food_manual_block([food for food in foods if food[0] in ingredients] + without_nutrients)}\n\n"
         f"{file_block(FOOD_INGREDIENT_MANUAL_FILE.name + ' (quantity: 1 means 100g, in 100g of the food item)', rows_to_csv(ingredient_header, ingredient_rows))}\n\n"
         f"{file_block('Rows updated in food_nutrient_manual.csv', rows_to_csv(FOOD_NUTRIENT_HEADER, rows))}\n\n"
         f"{PROMPT}"
-        + (f"\n\nSR Legacy gives no value for any ingredient (amount set to 0) for:{notes}" if notes else "")
     )
+    if without_data:
+        notes = "".join(
+            f"\n- food {fdc_id}: nutrient_id {', '.join(map(str, nutrient_ids))}"
+            for fdc_id, nutrient_ids in without_data.items()
+        )
+        prompt += f"\n\nSR Legacy gives no value for any ingredient (amount set to 0) for:{notes}"
+
+    # No other step asks for the nutrients of the foods without ingredient
+    if without_nutrients:
+        prompt += (
+            "\n\nNo ingredient was given for those food items: add their rows to the csv, "
+            "with a value for all the needed nutrients:"
+            + "".join(f"\n- food {fdc_id}: {description}" for fdc_id, description in without_nutrients)
+        )
+    set_clipboard(prompt)
