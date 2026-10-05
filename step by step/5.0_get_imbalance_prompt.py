@@ -14,7 +14,7 @@ PORTION_DIVISOR = 1.0
 PROMPT = "Adjust the menu to fix these lacks and excesses."
 
 
-def build_report(daily_needs, daily_totals):
+def build_report(daily_needs, daily_totals, nutrient_db):
     lacks, excesses, on_target = [], [], []
     for need in daily_needs:
         # The needs without nutrient ID cannot be computed from the databases
@@ -23,6 +23,11 @@ def build_report(daily_needs, daily_totals):
         total = sum(daily_totals[nutrient_id] for nutrient_id in need["ids"])
         max_str = "no limit" if need["max"] is None else f"{need['max']:g}"
         record = f"- **{need['name']}** ({need['unit']}): {total:.2f} (Target: {need['min']:g} to {max_str})"
+
+        # A food without data for a nutrient counts as 0: the total is then underestimated
+        no_data = [str(fdc_id) for fdc_id, nutrients in nutrient_db.items() if set(need["ids"]) - set(nutrients)]
+        if no_data:
+            record += f" - data missing for the foods: {', '.join(no_data)}"
 
         if total < need["min"]:
             lacks.append(record)
@@ -60,7 +65,7 @@ if __name__ == "__main__":
             daily_totals[nutrient_id] += amount * quantity / PORTION_DIVISOR
 
     # 3. Compare them with the daily needs
-    final_report = build_report(daily_needs, daily_totals)
+    final_report = build_report(daily_needs, daily_totals, nutrient_db)
     print("\nPreview:\n" + "=" * 40)
     print(final_report)
     print("=" * 40)

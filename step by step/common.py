@@ -5,6 +5,7 @@ prompt to the clipboard. Anything wrong raises, so the .bat pauses on the error.
 """
 import csv
 import io
+import os
 import re
 from pathlib import Path
 
@@ -34,6 +35,9 @@ The list must be the names of the items, easy to copy."""
 FOOD_QTT_PROMPT = """Write a text easy to copy in a csv format with two columns: food ID and quantity. For each food item (including prepared meals) on your menu, use the corresponding ID from SR Legacy 2018 (fdc.nal.usda.gov) and food_manual.csv (an extension of the main food database), and enter the quantity as a number where 1 means 100g. Do not include ingredients for prepared meals unless they are also listed as individual items on your menu.
 The food ID of a SR Legacy food is its fdc_id (between 167512 and 175304), not its NDB number."""
 
+
+# Start of the prompt a check step gives back to Gemini when it finds an error itself
+ERROR_PROMPT = "Your csv output is incorrect, write the whole corrected csv. The error is:"
 
 # Shared by the nutrient prompt (step 3.0) and its check (step 3.5)
 NUTRIENT_ID_NOTE = """When a row of daily_need_table.csv has several IDs (e.g. "1278, 1272"), the need is the sum of those nutrients: each of them must still have its own row with its single nutrient_id and its own amount. Never write a combined ID or a summed amount in the csv."""
@@ -101,6 +105,16 @@ def append_csv_rows(path, header, rows):
         if is_new:
             writer.writerow(header)
         writer.writerows(rows)
+
+
+def write_csv(path, header, rows):
+    """Rewrites a whole CSV file, without leaving it half written if something fails."""
+    tmp_path = Path(f"{path}.tmp")
+    with open(tmp_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
+        writer.writerow(header)
+        writer.writerows(rows)
+    os.replace(tmp_path, path)
 
 
 def rows_to_csv(header, rows):
@@ -260,13 +274,17 @@ def daily_need_block():
 # LLM answers
 # ---------------------------------------------------------
 def parse_food_nutrient_csv(text, known_fdc_ids):
-    """Strictly validates a food_nutrient CSV answer and returns its data rows."""
+    """Strictly validates a food_nutrient CSV answer and returns its data rows.
+
+    Every food of the csv must have a row for every nutrient of daily_need_table.csv.
+    """
     header, rows = _split_header(list(csv.reader(io.StringIO(extract_csv(text)))), "The clipboard CSV")
     check_header(header, FOOD_NUTRIENT_HEADER, "the clipboard")
     if not rows:
         raise ValueError("No data rows found in the clipboard CSV (only header).")
 
     seen = set()
+    given = {}
     for line, row in enumerate(rows, start=2):
         if len(row) != len(FOOD_NUTRIENT_HEADER):
             raise ValueError(
@@ -282,6 +300,15 @@ def parse_food_nutrient_csv(text, known_fdc_ids):
         if (fdc_id, nutrient_id) in seen:
             raise ValueError(f"Nutrient {nutrient_id} is given twice for the food {fdc_id} (row {line}).")
         seen.add((fdc_id, nutrient_id))
+        given.setdefault(fdc_id, set()).add(nutrient_id)
+
+    needed = {nutrient_id for need in load_daily_needs() for nutrient_id in need["ids"]}
+    missing = [
+        f"- food {fdc_id}: nutrient_id {', '.join(map(str, sorted(needed - nutrient_ids)))}"
+        for fdc_id, nutrient_ids in given.items() if needed - nutrient_ids
+    ]
+    if missing:
+        raise ValueError("Data missing for:\n" + "\n".join(missing))
     return rows
 
 

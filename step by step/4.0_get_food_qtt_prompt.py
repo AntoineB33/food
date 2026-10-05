@@ -2,7 +2,7 @@ from common import (
     FOOD_NUTRIENT_HEADER,
     FOOD_NUTRIENT_MANUAL_FILE,
     FOOD_QTT_PROMPT,
-    append_csv_rows,
+    check_header,
     confirm,
     daily_need_block,
     food_manual_block,
@@ -11,27 +11,30 @@ from common import (
     parse_food_nutrient_csv,
     read_csv,
     set_clipboard,
+    write_csv,
 )
 
 
-def append_to_nutrient_manual(rows):
-    """Appends the validated nutrient rows to food_nutrient_manual.csv."""
-    existing = read_csv(FOOD_NUTRIENT_MANUAL_FILE)[1] if FOOD_NUTRIENT_MANUAL_FILE.exists() else []
+def save_to_nutrient_manual(rows):
+    """Writes the validated nutrient rows to food_nutrient_manual.csv, replacing the rows of the same foods."""
+    existing = []
+    if FOOD_NUTRIENT_MANUAL_FILE.exists():
+        header, existing = read_csv(FOOD_NUTRIENT_MANUAL_FILE)
+        check_header(header, FOOD_NUTRIENT_HEADER, FOOD_NUTRIENT_MANUAL_FILE)
 
-    known = {(row[1], row[2]) for row in existing}
-    for row in rows:
-        if (row[1], row[2]) in known:
-            raise ValueError(
-                f"Nutrient {row[2]} of the food {row[1]} is already in '{FOOD_NUTRIENT_MANUAL_FILE}'. "
-                "Was this clipboard text already appended?"
-            )
+    # A food given again is replaced as a whole, so that none of its old rows remains
+    new_foods = {row[1] for row in rows}
+    kept = [row for row in existing if row[1] not in new_foods]
+    replaced = sorted({int(row[1]) for row in existing if row[1] in new_foods})
+    if replaced:
+        print(f"Replacing the {len(existing) - len(kept)} existing nutrient records of the foods {replaced}.")
 
     # The IDs chosen by the LLM may already be used: renumber after the last one of the file
     next_id = max((int(row[0]) for row in existing), default=49999) + 1
     rows = [[next_id + i, *row[1:]] for i, row in enumerate(rows)]
 
-    append_csv_rows(FOOD_NUTRIENT_MANUAL_FILE, FOOD_NUTRIENT_HEADER, rows)
-    print(f"Successfully appended {len(rows)} nutrient records to '{FOOD_NUTRIENT_MANUAL_FILE}'.")
+    write_csv(FOOD_NUTRIENT_MANUAL_FILE, FOOD_NUTRIENT_HEADER, kept + rows)
+    print(f"Successfully wrote {len(rows)} nutrient records to '{FOOD_NUTRIENT_MANUAL_FILE}'.")
 
 
 if __name__ == "__main__":
@@ -46,9 +49,9 @@ if __name__ == "__main__":
     print(clipboard_content)
     print("=" * 40 + "\n")
 
-    # 2. Strictly validate it and append it to food_nutrient_manual.csv
-    if confirm("Do you want to process and append the above clipboard text?"):
-        append_to_nutrient_manual(parse_food_nutrient_csv(clipboard_content, {fdc_id for fdc_id, _ in foods}))
+    # 2. Strictly validate it and write it to food_nutrient_manual.csv
+    if confirm("Do you want to process and save the above clipboard text?"):
+        save_to_nutrient_manual(parse_food_nutrient_csv(clipboard_content, {fdc_id for fdc_id, _ in foods}))
     else:
         print("Skipping clipboard text processing...")
 

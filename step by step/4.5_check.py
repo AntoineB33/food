@@ -1,4 +1,5 @@
 from common import (
+    ERROR_PROMPT,
     FOOD_QTT_PROMPT,
     daily_need_block,
     describe_diet,
@@ -15,8 +16,6 @@ from common import (
 CHECK_PROMPT = """Is Gemini's csv output correct and complete?
 The descriptions above are the foods the databases really hold for the IDs of Gemini's csv: an ID is wrong when its description is not the food of the menu.
 If Gemini's csv is wrong, write the whole corrected csv."""
-
-ERROR_PROMPT = "Your csv output is incorrect, write the whole corrected csv. The error is:"
 
 if __name__ == "__main__":
     # The clipboard holds the quantity csv answered to the prompt of step 4.0
