@@ -238,10 +238,10 @@ def load_daily_needs():
     nutrients = {_to_int(row[id_col], f"id in {NUTRIENT_FILE}"): (row[name_col], row[unit_col]) for row in rows}
 
     header, rows = read_csv(DAILY_NEED_FILE)
-    check_header(header, ["id", "min", "max"], DAILY_NEED_FILE)
+    check_header(header, ["id", "name", "min", "max"], DAILY_NEED_FILE)
     needs = []
     for line, row in enumerate(rows, start=2):
-        if len(row) != 3:
+        if len(row) != 4:
             raise ValueError(f"Malformed row {line} in {DAILY_NEED_FILE}: {row}")
         where = f"row {line} of {DAILY_NEED_FILE}"
         ids = [_to_int(i.strip(), f"nutrient id at {where}") for i in row[0].split(",") if i.strip()]
@@ -252,22 +252,29 @@ def load_daily_needs():
             print(f"Warning: no nutrient id at {where}.")
         needs.append({
             "ids": ids,
-            "name": " + ".join(nutrients[i][0] for i in ids),
+            # The name of the table, or else the SR Legacy ones
+            "name": row[1] or " + ".join(nutrients[i][0] for i in ids),
             "unit": "/".join(dict.fromkeys(nutrients[i][1] for i in ids)),
-            "min": _to_float(row[1], f"min at {where}") if row[1] else 0.0,
-            "max": _to_float(row[2], f"max at {where}") if row[2] else None,
+            "min": _to_float(row[2], f"min at {where}") if row[2] else 0.0,
+            "max": _to_float(row[3], f"max at {where}") if row[3] else None,
         })
     return needs
 
 
-def daily_need_block():
-    """Formats the daily need table for a prompt, with the nutrient names and units."""
+def daily_need_block(with_targets=False):
+    """Formats the daily need table for a prompt, with the nutrient names and units.
+
+    Without the targets, the min and max columns are left out: only the list of the needed nutrients remains.
+    """
+    header = ["id", "name", "unit", "min", "max"]
     rows = [
         [", ".join(map(str, need["ids"])), need["name"], need["unit"], f"{need['min']:g}",
          "" if need["max"] is None else f"{need['max']:g}"]
         for need in load_daily_needs()
     ]
-    return file_block(DAILY_NEED_FILE.name, rows_to_csv(["id", "name", "unit", "min", "max"], rows))
+    if not with_targets:
+        header, rows = header[:3], [row[:3] for row in rows]
+    return file_block(DAILY_NEED_FILE.name, rows_to_csv(header, rows))
 
 
 # ---------------------------------------------------------
