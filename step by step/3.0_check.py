@@ -17,16 +17,16 @@ CHECK_PROMPT = f"""Is this nutrient composition (for 100g of each food item) cor
 {NUTRIENT_ID_NOTE}"""
 
 if __name__ == "__main__":
-    # 1. The foods whose nutrients were asked for at step 2.7
+    # 1. The foods whose nutrients were asked for at step 2.9
     foods = unchecked_foods(load_food_manual())
     if not foods:
         raise ValueError(f"Every food of {FOOD_MANUAL_FILE.name} is already checked: nothing to check.")
 
-    # 2. The clipboard holds the nutrient csv answered to the prompt of step 2.7 (or of this step)
+    # 2. The clipboard holds the nutrient csv answered to the prompt of step 2.9 (or of this step)
     try:
         rows = parse_food_nutrient_csv(get_clipboard(), {fdc_id for fdc_id, _ in foods})
 
-        # Every new food must have nutrients, from this csv or from the sums of step 2.7
+        # Every new food must have nutrients, from this csv or from the sums of step 2.9
         covered = {int(row[1]) for row in rows}
         if FOOD_NUTRIENT_MANUAL_FILE.exists():
             covered |= {int(row[1]) for row in read_csv(FOOD_NUTRIENT_MANUAL_FILE)[1]}

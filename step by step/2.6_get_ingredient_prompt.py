@@ -37,6 +37,10 @@ if __name__ == "__main__":
     foods = [food for food in load_food_manual() if food[1].lower() in listed]
     missing = listed - {description.lower() for _, description in foods}
     if missing:
-        raise ValueError(f"Not in {FOOD_MANUAL_FILE.name}, no ID to ask the ingredients for: {', '.join(sorted(missing))}")
+        raise ValueError(
+            f"Those new foods have no ID yet, because they were not added to {FOOD_MANUAL_FILE.name} "
+            f"(answer 'y' to add them): {', '.join(sorted(missing))}"
+        )
 
-    set_clipboard(f"{food_manual_block(foods)}\n\n{PROMPT}")
+    # Starts with blank lines: it is pasted below the menu already put in the field
+    set_clipboard(f"\n\n\n{food_manual_block(foods)}\n\n{PROMPT}")

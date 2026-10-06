@@ -25,6 +25,8 @@ LAST_CHECKED_FILE = ROOT / "step by step bats" / "last_checked_food.txt"
 
 FOOD_MANUAL_HEADER = ["fdc_id", "description"]
 FOOD_INGREDIENT_HEADER = ["fdc_id", "ingredient_fdc_id", "quantity"]
+# How the ingredients are shown in a prompt: the LLM may answer with this description column too
+FOOD_INGREDIENT_DESCRIBED_HEADER = ["fdc_id", "ingredient_fdc_id", "ingredient_description", "quantity"]
 FOOD_NUTRIENT_HEADER = [
     "id", "fdc_id", "nutrient_id", "amount", "data_points",
     "derivation_id", "min", "max", "median",
@@ -297,20 +299,46 @@ def save_to_nutrient_manual(rows):
     return rows
 
 
-def food_ingredient_block(fdc_ids):
-    """Formats the ingredients of the foods for a prompt, with their SR Legacy descriptions; None if they have none."""
-    if not FOOD_INGREDIENT_MANUAL_FILE.exists():
-        return None
-    header, rows = read_csv(FOOD_INGREDIENT_MANUAL_FILE)
-    check_header(header, FOOD_INGREDIENT_HEADER, FOOD_INGREDIENT_MANUAL_FILE)
+def ingredient_block(rows):
+    """Formats rows of [fdc_id, ingredient_fdc_id, quantity] for a prompt, with the SR Legacy description of each ingredient."""
     sr_legacy = load_sr_legacy_foods()
-    rows = [[row[0], row[1], sr_legacy[int(row[1])], row[2]] for row in rows if int(row[0]) in fdc_ids]
-    if not rows:
-        return None
     return file_block(
         f"{FOOD_INGREDIENT_MANUAL_FILE.name} (quantity: 1 means 100g, in 100g of the food item)",
-        rows_to_csv(["fdc_id", "ingredient_fdc_id", "ingredient_description", "quantity"], rows),
+        rows_to_csv(
+            FOOD_INGREDIENT_DESCRIBED_HEADER,
+            [[fdc_id, ingredient_id, sr_legacy[int(ingredient_id)], quantity] for fdc_id, ingredient_id, quantity in rows],
+        ),
     )
+
+
+def load_food_ingredients():
+    """Returns the rows of food_ingredient_manual.csv, as [fdc_id, ingredient_fdc_id, quantity]."""
+    if not FOOD_INGREDIENT_MANUAL_FILE.exists():
+        return []
+    header, rows = read_csv(FOOD_INGREDIENT_MANUAL_FILE)
+    check_header(header, FOOD_INGREDIENT_HEADER, FOOD_INGREDIENT_MANUAL_FILE)
+    return rows
+
+
+def save_to_ingredient_manual(ingredients):
+    """Writes {fdc_id: {ingredient_fdc_id: quantity}} to food_ingredient_manual.csv, replacing the rows of the same foods.
+
+    Returns the rows as they are written.
+    """
+    kept = [row for row in load_food_ingredients() if int(row[0]) not in ingredients]
+    rows = [
+        [str(fdc_id), str(ingredient_id), f"{quantity:g}"]
+        for fdc_id, food_ingredients in ingredients.items() for ingredient_id, quantity in food_ingredients.items()
+    ]
+    write_csv(FOOD_INGREDIENT_MANUAL_FILE, FOOD_INGREDIENT_HEADER, kept + rows)
+    print(f"Successfully wrote {len(rows)} ingredient records to '{FOOD_INGREDIENT_MANUAL_FILE}'.")
+    return rows
+
+
+def food_ingredient_block(fdc_ids):
+    """Formats the saved ingredients of the foods for a prompt; None if they have none."""
+    rows = [row for row in load_food_ingredients() if int(row[0]) in fdc_ids]
+    return ingredient_block(rows) if rows else None
 
 
 def updated_nutrient_blocks(foods, rows):
@@ -427,7 +455,16 @@ def parse_food_nutrient_csv(text, known_fdc_ids):
 def parse_ingredient_csv(text, known_fdc_ids, sr_legacy_ids):
     """Strictly validates a (food, ingredient, quantity) CSV answer and returns {fdc_id: {ingredient_fdc_id: quantity}}."""
     header, rows = _split_header(list(csv.reader(io.StringIO(extract_csv(text)))), "The clipboard CSV")
-    check_header(header, FOOD_INGREDIENT_HEADER, "the clipboard")
+    if [col.lower() for col in header] == FOOD_INGREDIENT_DESCRIBED_HEADER:
+        # The description is only there for the LLM: the ID alone tells which food it is
+        for line, row in enumerate(rows, start=2):
+            if len(row) != len(header):
+                raise ValueError(
+                    f"Malformed CSV at row {line}: expected {len(header)} columns, but found {len(row)}.\nRow data: {row}"
+                )
+        rows = [row[:2] + row[3:] for row in rows]
+    else:
+        check_header(header, FOOD_INGREDIENT_HEADER, "the clipboard")
     if not rows:
         raise ValueError("No data rows found in the clipboard CSV (only header).")
 
