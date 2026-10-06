@@ -3,13 +3,9 @@ from common import (
     FOOD_INGREDIENT_HEADER,
     FOOD_INGREDIENT_MANUAL_FILE,
     FOOD_MANUAL_FILE,
-    FOOD_NUTRIENT_HEADER,
     FOOD_NUTRIENT_MANUAL_FILE,
     NUTRIENT_ID_NOTE,
     check_header,
-    daily_need_block,
-    file_block,
-    food_manual_block,
     get_clipboard,
     load_daily_needs,
     load_diet_nutrients,
@@ -17,10 +13,10 @@ from common import (
     load_sr_legacy_foods,
     parse_ingredient_csv,
     read_csv,
-    rows_to_csv,
     save_to_nutrient_manual,
     set_clipboard,
     unchecked_foods,
+    updated_nutrient_blocks,
     write_csv,
 )
 
@@ -47,25 +43,20 @@ def save_to_ingredient_manual(ingredients):
 
 
 def sum_nutrients(ingredients):
-    """Returns the food_nutrient rows of the foods, each needed nutrient being the sum of those of the ingredients.
-
-    Also returns the nutrients that none of the ingredients of a food has, as {fdc_id: [nutrient_id]}.
-    """
+    """Returns the food_nutrient rows of the foods, each needed nutrient being the sum of those of the ingredients."""
     needed = list(dict.fromkeys(nutrient_id for need in load_daily_needs() for nutrient_id in need["ids"]))
     db = load_diet_nutrients({i: 1.0 for food_ingredients in ingredients.values() for i in food_ingredients})
 
-    rows, without_data = [], {}
+    rows = []
     for fdc_id, food_ingredients in ingredients.items():
         for nutrient_id in needed:
-            amounts = [
-                quantity * db[ingredient_id][nutrient_id]
-                for ingredient_id, quantity in food_ingredients.items() if nutrient_id in db[ingredient_id]
-            ]
-            if not amounts:
-                without_data.setdefault(fdc_id, []).append(nutrient_id)
+            # A nutrient that SR Legacy does not give for an ingredient counts as 0
+            amount = sum(
+                quantity * db[ingredient_id].get(nutrient_id, 0.0) for ingredient_id, quantity in food_ingredients.items()
+            )
             # The ID is given by save_to_nutrient_manual
-            rows.append(["", str(fdc_id), str(nutrient_id), f"{round(sum(amounts), 4):g}", "1", "1", "", "", ""])
-    return rows, without_data
+            rows.append(["", str(fdc_id), str(nutrient_id), f"{round(amount, 4):g}", "1", "1", "", "", ""])
+    return rows
 
 
 if __name__ == "__main__":
@@ -85,7 +76,7 @@ if __name__ == "__main__":
         raise
 
     # 3. Compute the nutrients before writing anything, then update both DB files
-    rows, without_data = sum_nutrients(ingredients)
+    rows = sum_nutrients(ingredients)
     save_to_ingredient_manual(ingredients)
     rows = save_to_nutrient_manual(rows)
 
@@ -94,24 +85,8 @@ if __name__ == "__main__":
     without_nutrients = [food for food in foods if food[0] not in with_nutrients]
 
     # 4. Ask whether the sum is the real composition
-    ingredient_rows = [
-        [fdc_id, ingredient_id, sr_legacy[ingredient_id], f"{quantity:g}"]
-        for fdc_id, food_ingredients in ingredients.items() for ingredient_id, quantity in food_ingredients.items()
-    ]
-    ingredient_header = ["fdc_id", "ingredient_fdc_id", "ingredient_description", "quantity"]
-    prompt = (
-        f"{daily_need_block()}\n\n"
-        f"{food_manual_block([food for food in foods if food[0] in ingredients] + without_nutrients)}\n\n"
-        f"{file_block(FOOD_INGREDIENT_MANUAL_FILE.name + ' (quantity: 1 means 100g, in 100g of the food item)', rows_to_csv(ingredient_header, ingredient_rows))}\n\n"
-        f"{file_block('Rows updated in food_nutrient_manual.csv', rows_to_csv(FOOD_NUTRIENT_HEADER, rows))}\n\n"
-        f"{PROMPT}"
-    )
-    if without_data:
-        notes = "".join(
-            f"\n- food {fdc_id}: nutrient_id {', '.join(map(str, nutrient_ids))}"
-            for fdc_id, nutrient_ids in without_data.items()
-        )
-        prompt += f"\n\nSR Legacy gives no value for any ingredient (amount set to 0) for:{notes}"
+    summed = [food for food in foods if food[0] in ingredients]
+    prompt = f"{updated_nutrient_blocks(summed + without_nutrients, rows)}\n\n{PROMPT}"
 
     # No other step asks for the nutrients of the foods without ingredient
     if without_nutrients:

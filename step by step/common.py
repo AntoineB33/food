@@ -297,6 +297,33 @@ def save_to_nutrient_manual(rows):
     return rows
 
 
+def food_ingredient_block(fdc_ids):
+    """Formats the ingredients of the foods for a prompt, with their SR Legacy descriptions; None if they have none."""
+    if not FOOD_INGREDIENT_MANUAL_FILE.exists():
+        return None
+    header, rows = read_csv(FOOD_INGREDIENT_MANUAL_FILE)
+    check_header(header, FOOD_INGREDIENT_HEADER, FOOD_INGREDIENT_MANUAL_FILE)
+    sr_legacy = load_sr_legacy_foods()
+    rows = [[row[0], row[1], sr_legacy[int(row[1])], row[2]] for row in rows if int(row[0]) in fdc_ids]
+    if not rows:
+        return None
+    return file_block(
+        f"{FOOD_INGREDIENT_MANUAL_FILE.name} (quantity: 1 means 100g, in 100g of the food item)",
+        rows_to_csv(["fdc_id", "ingredient_fdc_id", "ingredient_description", "quantity"], rows),
+    )
+
+
+def updated_nutrient_blocks(foods, rows):
+    """Returns the start of a prompt checking nutrient rows just saved: the needs, the foods, their ingredients, the rows."""
+    blocks = [
+        daily_need_block(),
+        food_manual_block(foods),
+        food_ingredient_block({fdc_id for fdc_id, _ in foods}),
+        file_block("Rows updated in food_nutrient_manual.csv", rows_to_csv(FOOD_NUTRIENT_HEADER, rows)),
+    ]
+    return "\n\n".join(block for block in blocks if block)
+
+
 # ---------------------------------------------------------
 # daily_need_table.csv
 # ---------------------------------------------------------
