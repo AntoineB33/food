@@ -2,6 +2,9 @@
 
 Every script reads the clipboard and/or the DB files, then copies the next
 prompt to the clipboard. Anything wrong raises, so the .bat pauses on the error.
+
+The menu is a flat list of ingredients with their amount for the day: there is no dish. An ingredient is a
+SR Legacy food or a manual food (food_manual.csv), whose nutrients are in food_nutrient_manual.csv.
 """
 import csv
 import io
@@ -21,17 +24,19 @@ FOOD_FILE = DB_DIR / "food.csv"
 FOOD_NUTRIENT_FILE = DB_DIR / "food_nutrient.csv"
 FOOD_MANUAL_FILE = DB_DIR / "food_manual.csv"
 FOOD_NUTRIENT_MANUAL_FILE = DB_DIR / "food_nutrient_manual.csv"
-FOOD_INGREDIENT_MANUAL_FILE = DB_DIR / "food_ingredient_manual.csv"
-LAST_CHECKED_FILE = ROOT / "step by step bats" / "last_checked_food.txt"
+MENU_FILE = DB_DIR / "menu.csv"
 
-FOOD_MANUAL_HEADER = ["fdc_id", "description"]
-FOOD_INGREDIENT_HEADER = ["fdc_id", "ingredient_fdc_id", "quantity"]
-# How the ingredients are shown in a prompt: the LLM may answer with this description column too
-FOOD_INGREDIENT_DESCRIBED_HEADER = ["fdc_id", "ingredient_fdc_id", "ingredient_description", "quantity"]
-# How they are shown to be checked: what the LLM meant, next to what its ID really is
-FOOD_INGREDIENT_CHECK_HEADER = [
-    "fdc_id", "ingredient_fdc_id", "ingredient_description", "real_description", "quantity",
-]
+# The amount of a food is in grams, its nutrients being given for 100g. A supplement taken as a pill has no
+# meaningful weight: its amount is a number of doses, its nutrients being given for one dose.
+GRAM, DOSE = "g", "dose"
+UNITS = (GRAM, DOSE)
+
+FOOD_MANUAL_HEADER = ["fdc_id", "description", "unit"]
+MENU_HEADER = ["fdc_id", "description", "amount", "unit"]
+# How the LLM writes the menu
+MENU_ANSWER_HEADER = ["ingredient_fdc_id", "ingredient_description", "amount", "unit"]
+# How it is shown to be checked: what the LLM meant, next to what its ID really is
+MENU_CHECK_HEADER = ["ingredient_fdc_id", "ingredient_description", "real_description", "amount", "unit"]
 # What the LLM writes as ingredient_fdc_id for an ingredient that is in no food database
 NEW_INGREDIENT = "new"
 FOOD_NUTRIENT_HEADER = [
@@ -39,19 +44,12 @@ FOOD_NUTRIENT_HEADER = [
     "derivation_id", "min", "max", "median",
 ]
 
-# Prompts shared by a step and its check
-FOOD_LIST_PROMPT = """Provide me with a list of all food items (including prepared meals) on your menu that are not listed in the SR Legacy 2018 database (fdc.nal.usda.gov) and food_manual.csv. Do not include ingredients for prepared meals unless they are also listed as individual items on your menu.
-The list must be the names of the items, easy to copy."""
-
-FOOD_QTT_PROMPT = """Write a text easy to copy in a csv format with two columns: food ID and quantity. For each food item (including prepared meals) on your menu, use the corresponding ID from SR Legacy 2018 (fdc.nal.usda.gov) and food_manual.csv (an extension of the main food database), and enter the quantity as a number where 1 means 100g. Do not include ingredients for prepared meals unless they are also listed as individual items on your menu.
-The food ID of a SR Legacy food is its fdc_id (between 167512 and 175304), not its NDB number."""
-
-
 # Start of the prompt a check step gives back to Gemini when it finds an error itself
 ERROR_PROMPT = "Your csv output is incorrect, write the whole corrected csv. The error is:"
 
 # Given with every request for a food_nutrient csv
 NUTRIENT_ID_NOTE = """When a row of daily_need_table.csv has several IDs (e.g. "1278, 1272"), the need is the sum of those nutrients: each of them must still have its own row with its single nutrient_id and its own amount. Never write a combined ID or a summed amount in the csv."""
+NUTRIENT_UNIT_NOTE = f"""The amounts are for 100g of the food item when its unit is {GRAM}, for one dose when its unit is {DOSE}."""
 
 
 # ---------------------------------------------------------
@@ -95,27 +93,6 @@ def read_csv(path):
 def check_header(header, expected, source):
     if [col.lower() for col in header] != expected:
         raise ValueError(f"CSV column mismatch in {source}!\nExpected: {expected}\nFound:    {header}")
-
-
-def append_csv_rows(path, header, rows):
-    """Appends rows to a CSV file, creating it with its header if needed."""
-    path = Path(path)
-    is_new = not path.exists() or path.stat().st_size == 0
-    ends_with_newline = True
-    if not is_new:
-        check_header(read_csv(path)[0], header, path)
-        with open(path, "rb") as f:
-            f.seek(-1, 2)
-            ends_with_newline = f.read(1) in (b"\n", b"\r")
-
-    with open(path, "a", encoding="utf-8", newline="") as f:
-        # Without this, the first new row would be glued to the last existing one
-        if not ends_with_newline:
-            f.write("\r\n")
-        writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
-        if is_new:
-            writer.writerow(header)
-        writer.writerows(rows)
 
 
 def write_csv(path, header, rows):
@@ -167,21 +144,29 @@ def _to_float(value, what):
 
 
 # ---------------------------------------------------------
-# food_manual.csv
+# Foods
 # ---------------------------------------------------------
-def load_food_manual():
-    """Returns the manual foods as a list of (fdc_id, description); none if the file does not exist yet."""
-    # add_new_foods creates the file with the first foods
+def load_manual_foods():
+    """Returns the manual foods as a list of (fdc_id, description, unit); none if the file does not exist yet."""
     if not FOOD_MANUAL_FILE.exists():
         return []
     header, rows = read_csv(FOOD_MANUAL_FILE)
-    check_header(header, FOOD_MANUAL_HEADER, FOOD_MANUAL_FILE)
+    # Written before the units: every food was in grams
+    with_unit = [col.lower() for col in header] != FOOD_MANUAL_HEADER[:2]
+    if with_unit:
+        check_header(header, FOOD_MANUAL_HEADER, FOOD_MANUAL_FILE)
     foods = []
     for line, row in enumerate(rows, start=2):
-        if len(row) != 2 or not row[1]:
+        if len(row) != len(header) or not row[1] or (with_unit and row[2] not in UNITS):
             raise ValueError(f"Malformed row {line} in {FOOD_MANUAL_FILE}: {row}")
-        foods.append((_to_int(row[0], f"fdc_id at row {line} of {FOOD_MANUAL_FILE}"), row[1]))
+        fdc_id = _to_int(row[0], f"fdc_id at row {line} of {FOOD_MANUAL_FILE}")
+        foods.append((fdc_id, row[1], row[2] if with_unit else GRAM))
     return foods
+
+
+def load_food_manual():
+    """Returns the manual foods as a list of (fdc_id, description)."""
+    return [(fdc_id, description) for fdc_id, description, _ in load_manual_foods()]
 
 
 def load_sr_legacy_foods():
@@ -198,143 +183,34 @@ def load_all_foods():
     return foods
 
 
-def parse_food_list(text):
-    """Returns the food descriptions of the clipboard, one per line."""
-    descriptions = []
-    for i, line in enumerate(text.strip("\n").split("\n"), start=1):
-        if not line or line.isspace():
-            raise ValueError(f"Blank line detected at line {i}. Please fix the clipboard input.")
-        if line[0].isspace():
-            raise ValueError(f"Line {i} starts with a blank character. Please fix the clipboard input.")
-        if line.strip().lower() in (d.lower() for d in descriptions):
-            raise ValueError(f"'{line.strip()}' is listed twice (line {i}). Please fix the clipboard input.")
-        descriptions.append(line.strip())
-    return descriptions
+def load_food_units():
+    """Returns the unit of the manual foods as {fdc_id: unit}. A SR Legacy food is always in grams."""
+    return {fdc_id: unit for fdc_id, _, unit in load_manual_foods()}
 
 
-def add_new_foods(descriptions, foods):
-    """Appends the foods that are not in food_manual.csv yet, with the smallest free IDs."""
-    known = {description.lower() for _, description in foods}
-    for description in descriptions:
-        if description.lower() in known:
-            print(f"Already in {FOOD_MANUAL_FILE.name}, skipped: {description}")
-    descriptions = [d for d in descriptions if d.lower() not in known]
-
-    # The fdc_ids already used by SR Legacy and food_manual.csv
-    existing_ids = set(load_sr_legacy_foods()) | {fdc_id for fdc_id, _ in foods}
-    new_records = []
+def add_manual_foods(new_foods):
+    """Appends (description, unit) foods to food_manual.csv, with the smallest free IDs."""
+    foods = load_manual_foods()
+    # An ID that still has nutrients would give them to the new food
+    used = set(load_sr_legacy_foods()) | {fdc_id for fdc_id, _, _ in foods} | manual_nutrient_food_ids()
     current_id = 1
-    for description in descriptions:
-        while current_id in existing_ids:
+    for description, unit in new_foods:
+        while current_id in used:
             current_id += 1
-        new_records.append([current_id, description])
-        existing_ids.add(current_id)
-
-    if new_records:
-        append_csv_rows(FOOD_MANUAL_FILE, FOOD_MANUAL_HEADER, new_records)
-    print(f"Successfully appended {len(new_records)} items to '{FOOD_MANUAL_FILE}'.")
-
-
-def unchecked_foods(foods):
-    """Returns the manual foods listed after the last checked one (all of them if none is checked)."""
-    marker = LAST_CHECKED_FILE.read_text(encoding="utf-8-sig").strip() if LAST_CHECKED_FILE.exists() else ""
-    if not marker:
-        return foods
-    positions = [i for i, (_, description) in enumerate(foods) if description.lower() == marker.lower()]
-    if not positions:
-        raise ValueError(f"Food description '{marker}' ({LAST_CHECKED_FILE}) was not found in {FOOD_MANUAL_FILE}.")
-    return foods[positions[-1] + 1:]
-
-
-def describe_diet(diet):
-    """Returns the diet as rows of [fdc_id, description, quantity]; raises on the IDs that are in no food database."""
-    descriptions = load_all_foods()
-
-    unknown = [fdc_id for fdc_id in diet if fdc_id not in descriptions]
-    if unknown:
-        raise ValueError(
-            f"The food IDs {unknown} are neither in {FOOD_FILE.name} (SR Legacy fdc_id) nor in {FOOD_MANUAL_FILE.name}."
-        )
-    return [[fdc_id, descriptions[fdc_id], f"{quantity:g}"] for fdc_id, quantity in diet.items()]
-
-
-def load_diet_nutrients(diet):
-    """Returns the nutrients of the foods of the diet as {fdc_id: {nutrient_id: amount}}.
-
-    Raises on the IDs that are in no food database, and on the foods without any nutrient.
-    """
-    descriptions = {fdc_id: description for fdc_id, description, _ in describe_diet(diet)}
-
-    print("Loading databases...")
-    db = {}
-    for file in (FOOD_NUTRIENT_FILE, FOOD_NUTRIENT_MANUAL_FILE):
-        # 'utf-8-sig' prevents the ﻿ header bug common with Windows CSVs
-        with open(file, "r", encoding="utf-8-sig", newline="") as f:
-            for line, row in enumerate(csv.DictReader(f), start=2):
-                try:
-                    fdc_id = int(row["fdc_id"])
-                    if fdc_id in diet:
-                        db.setdefault(fdc_id, {})[int(row["nutrient_id"])] = float(row["amount"])
-                except (KeyError, TypeError, ValueError) as e:
-                    raise ValueError(f"Malformed row {line} in {file}: {row}") from e
-
-    without_nutrient = [f"{fdc_id} ({descriptions[fdc_id]})" for fdc_id in diet if fdc_id not in db]
-    if without_nutrient:
-        raise ValueError(f"No nutrient in the databases for the foods: {', '.join(without_nutrient)}.")
-    return db
+        foods.append((current_id, description, unit))
+        used.add(current_id)
+    write_csv(FOOD_MANUAL_FILE, FOOD_MANUAL_HEADER, foods)
+    print(f"Successfully added {len(new_foods)} foods to '{FOOD_MANUAL_FILE}'.")
 
 
 def food_manual_block(foods):
+    """Formats (fdc_id, description, unit) manual foods for a prompt."""
     return file_block(FOOD_MANUAL_FILE.name, rows_to_csv(FOOD_MANUAL_HEADER, foods))
 
 
 # ---------------------------------------------------------
-# food_nutrient_manual.csv
+# Food search
 # ---------------------------------------------------------
-def save_to_nutrient_manual(rows):
-    """Writes the validated nutrient rows to food_nutrient_manual.csv, replacing the rows of the same foods.
-
-    Returns the rows as they are written, with their new IDs.
-    """
-    existing = []
-    if FOOD_NUTRIENT_MANUAL_FILE.exists():
-        header, existing = read_csv(FOOD_NUTRIENT_MANUAL_FILE)
-        check_header(header, FOOD_NUTRIENT_HEADER, FOOD_NUTRIENT_MANUAL_FILE)
-
-    # A food given again is replaced as a whole, so that none of its old rows remains
-    new_foods = {row[1] for row in rows}
-    kept = [row for row in existing if row[1] not in new_foods]
-    replaced = sorted({int(row[1]) for row in existing if row[1] in new_foods})
-    if replaced:
-        print(f"Replacing the {len(existing) - len(kept)} existing nutrient records of the foods {replaced}.")
-
-    # The IDs chosen by the LLM may already be used: renumber after the last one of the file
-    next_id = max((int(row[0]) for row in existing), default=49999) + 1
-    rows = [[next_id + i, *row[1:]] for i, row in enumerate(rows)]
-
-    write_csv(FOOD_NUTRIENT_MANUAL_FILE, FOOD_NUTRIENT_HEADER, kept + rows)
-    print(f"Successfully wrote {len(rows)} nutrient records to '{FOOD_NUTRIENT_MANUAL_FILE}'.")
-    return rows
-
-
-def ingredient_block(rows):
-    """Formats ingredient rows (see load_food_ingredients) for a prompt, with the real description of each ingredient.
-
-    An ingredient without ID keeps the description the LLM gave it.
-    """
-    foods = load_all_foods()
-    return file_block(
-        f"{FOOD_INGREDIENT_MANUAL_FILE.name} (quantity: 1 means 100g, in 100g of the food item)",
-        rows_to_csv(
-            FOOD_INGREDIENT_DESCRIBED_HEADER,
-            [
-                [fdc_id, ingredient_id, foods[int(ingredient_id)] if ingredient_id else description, quantity]
-                for fdc_id, ingredient_id, description, quantity in rows
-            ],
-        ),
-    )
-
-
 def _words(description):
     """Returns the words of a food description, without their plural, to compare descriptions."""
     return {word.rstrip("s") for word in re.findall(r"[a-z]+", description.lower()) if len(word) > 2}
@@ -370,7 +246,7 @@ def food_candidates(descriptions, foods, limit=10):
 
 
 def candidates_block(descriptions, foods):
-    """Formats the foods ({fdc_id: description}) the closest to each description for a prompt; '' without description."""
+    """Formats the foods ({fdc_id: description}) the closest to each description for a prompt."""
     return "\n".join(
         f'- "{description}":'
         + ("".join(f"\n  {fdc_id}: {found}" for fdc_id, found in candidates) or "\n  nothing found")
@@ -378,60 +254,213 @@ def candidates_block(descriptions, foods):
     )
 
 
-def ingredient_check_block(rows, foods):
-    """Formats ingredient rows (see load_food_ingredients) to be checked: the description the LLM gave to each
-    ingredient next to the real one of its ID, from foods ({fdc_id: description})."""
+# ---------------------------------------------------------
+# Menu
+# ---------------------------------------------------------
+def load_menu():
+    """Returns the rows of menu.csv, as [fdc_id, description, amount, unit].
+
+    fdc_id is empty for an ingredient that is not identified yet. description is the one the LLM gave.
+    """
+    if not MENU_FILE.exists():
+        raise ValueError(f"{MENU_FILE.name} does not exist yet: run step 2.5 first.")
+    header, rows = read_csv(MENU_FILE)
+    check_header(header, MENU_HEADER, MENU_FILE)
+    return rows
+
+
+def load_identified_menu():
+    """Returns the menu as a list of (fdc_id, amount, unit); raises while an ingredient has no ID."""
+    rows = load_menu()
+    without_id = [description for fdc_id, description, _, _ in rows if not fdc_id]
+    if without_id:
+        raise ValueError(
+            f"Those ingredients of {MENU_FILE.name} have no ID yet, finish step 2.5 first: {', '.join(without_id)}"
+        )
+    if not rows:
+        raise ValueError(f"{MENU_FILE.name} has no ingredient: run step 2.5 first.")
+    return [(int(fdc_id), float(amount), unit) for fdc_id, _, amount, unit in rows]
+
+
+def save_menu(rows):
+    """Writes the whole menu (see load_menu) to menu.csv."""
+    write_csv(MENU_FILE, MENU_HEADER, rows)
+    print(f"Successfully wrote the {len(rows)} ingredients of the menu to '{MENU_FILE}'.")
+
+
+def menu_check_block(rows, foods):
+    """Formats the menu (see load_menu) to be checked: the description the LLM gave to each ingredient next to
+    the real one of its ID, from foods ({fdc_id: description})."""
     return file_block(
-        f"{FOOD_INGREDIENT_MANUAL_FILE.name} (quantity: 1 means 100g, in 100g of the food item)",
+        f"{MENU_FILE.name} (amount: for the whole day, in the unit of the row)",
         rows_to_csv(
-            FOOD_INGREDIENT_CHECK_HEADER,
+            MENU_CHECK_HEADER,
             [
-                [fdc_id, ingredient_id, description, foods[int(ingredient_id)] if ingredient_id else "", quantity]
-                for fdc_id, ingredient_id, description, quantity in rows
+                [fdc_id, description, foods[int(fdc_id)] if fdc_id else "", amount, unit]
+                for fdc_id, description, amount, unit in rows
             ],
         ),
     )
 
 
-def load_food_ingredients():
-    """Returns the rows of food_ingredient_manual.csv, as [fdc_id, ingredient_fdc_id, ingredient_description, quantity].
+def parse_menu_csv(text, foods, units):
+    """Strictly validates a menu CSV answer and returns its rows (see load_menu).
 
-    ingredient_fdc_id is the ID of a SR Legacy food or of another manual food. It is empty for an ingredient
-    that is not identified yet: only its description tells what it is.
+    foods ({fdc_id: description}) are the foods an ingredient can be, units ({fdc_id: unit}) the unit of the
+    manual ones. Without ingredient_fdc_id, or with NEW_INGREDIENT instead (kept as it is in the rows), the row
+    needs a description.
     """
-    if not FOOD_INGREDIENT_MANUAL_FILE.exists():
-        return []
-    header, rows = read_csv(FOOD_INGREDIENT_MANUAL_FILE)
-    if [col.lower() for col in header] == FOOD_INGREDIENT_HEADER:
-        # Written before the descriptions were kept
-        return [[row[0], row[1], "", row[2]] for row in rows]
-    check_header(header, FOOD_INGREDIENT_DESCRIBED_HEADER, FOOD_INGREDIENT_MANUAL_FILE)
+    header, rows = _split_header(list(csv.reader(io.StringIO(extract_csv(text)))), "The clipboard CSV")
+    columns = [col.lower() for col in header]
+    # The LLM may also answer with the columns of the table it was shown
+    if columns != MENU_CHECK_HEADER:
+        check_header(header, MENU_ANSWER_HEADER, "the clipboard")
+    if not rows:
+        raise ValueError("No data rows found in the clipboard CSV (only header).")
+
+    parsed = []
+    unknown = []
+    for line, row in enumerate(rows, start=2):
+        if len(row) != len(columns):
+            raise ValueError(
+                f"Malformed CSV at row {line}: expected {len(columns)} columns, but found {len(row)}.\nRow data: {row}"
+            )
+        record = dict(zip(columns, row))
+        description = record["ingredient_description"]
+        amount = _to_float(record["amount"], f"amount at row {line}")
+        unit = record["unit"].lower()
+        if amount <= 0:
+            raise ValueError(f"Invalid amount {amount} at row {line}.")
+        if unit not in UNITS:
+            raise ValueError(f"Invalid unit '{record['unit']}' at row {line}: it must be {GRAM} or {DOSE}.")
+
+        ingredient_id = record["ingredient_fdc_id"].lower()
+        if ingredient_id in ("", NEW_INGREDIENT):
+            if not description:
+                raise ValueError(f"Row {line} has neither an ingredient_fdc_id nor an ingredient_description.")
+        else:
+            ingredient_id = _to_int(ingredient_id, f"ingredient_fdc_id at row {line}")
+            if ingredient_id not in foods:
+                unknown.append((line, ingredient_id, description))
+            elif unit != units.get(ingredient_id, GRAM):
+                raise ValueError(
+                    f"Wrong unit '{unit}' at row {line}: the amount of the food {ingredient_id} "
+                    f"({foods[ingredient_id]}) is in {units.get(ingredient_id, GRAM)}."
+                )
+        parsed.append([str(ingredient_id), description, f"{amount:g}", unit])
+
+    # All of them at once, so that the LLM corrects them in one go
+    if unknown:
+        message = (
+            f"Those ingredient_fdc_id exist neither in SR Legacy 2018 (a SR Legacy fdc_id is between 167512 "
+            f"and 175304, it is not a NDB number) nor in {FOOD_MANUAL_FILE.name}:\n"
+            + "\n".join(f"- row {line}: {ingredient_id}" for line, ingredient_id, _ in unknown)
+        )
+        described = [description for _, _, description in unknown if description]
+        if described:
+            # Its memory of the IDs is not reliable: give it the real ones to choose from
+            message += (
+                "\nDo not guess another ID: take it from those foods, searched from your descriptions:\n"
+                + candidates_block(described, foods)
+            )
+        raise ValueError(message)
+    return parsed
+
+
+# ---------------------------------------------------------
+# Nutrients of the foods
+# ---------------------------------------------------------
+def manual_nutrient_food_ids():
+    """Returns the IDs of the foods that have nutrients in food_nutrient_manual.csv."""
+    if not FOOD_NUTRIENT_MANUAL_FILE.exists():
+        return set()
+    header, rows = read_csv(FOOD_NUTRIENT_MANUAL_FILE)
+    check_header(header, FOOD_NUTRIENT_HEADER, FOOD_NUTRIENT_MANUAL_FILE)
+    return {int(row[1]) for row in rows}
+
+
+def save_to_nutrient_manual(rows):
+    """Writes the validated nutrient rows to food_nutrient_manual.csv, replacing the rows of the same foods.
+
+    Returns the rows as they are written, with their new IDs.
+    """
+    existing = []
+    if FOOD_NUTRIENT_MANUAL_FILE.exists():
+        header, existing = read_csv(FOOD_NUTRIENT_MANUAL_FILE)
+        check_header(header, FOOD_NUTRIENT_HEADER, FOOD_NUTRIENT_MANUAL_FILE)
+
+    # A food given again is replaced as a whole, so that none of its old rows remains
+    new_foods = {row[1] for row in rows}
+    kept = [row for row in existing if row[1] not in new_foods]
+    replaced = sorted({int(row[1]) for row in existing if row[1] in new_foods})
+    if replaced:
+        print(f"Replacing the {len(existing) - len(kept)} existing nutrient records of the foods {replaced}.")
+
+    # The IDs chosen by the LLM may already be used: renumber after the last one of the file
+    next_id = max((int(row[0]) for row in existing), default=49999) + 1
+    rows = [[next_id + i, *row[1:]] for i, row in enumerate(rows)]
+
+    write_csv(FOOD_NUTRIENT_MANUAL_FILE, FOOD_NUTRIENT_HEADER, kept + rows)
+    print(f"Successfully wrote {len(rows)} nutrient records to '{FOOD_NUTRIENT_MANUAL_FILE}'.")
     return rows
 
 
-def save_to_ingredient_manual(rows):
-    """Writes ingredient rows (see load_food_ingredients) to food_ingredient_manual.csv, replacing the rows of the same foods."""
-    new_foods = {row[0] for row in rows}
-    kept = [row for row in load_food_ingredients() if row[0] not in new_foods]
-    write_csv(FOOD_INGREDIENT_MANUAL_FILE, FOOD_INGREDIENT_DESCRIBED_HEADER, kept + rows)
-    print(f"Successfully wrote {len(rows)} ingredient records to '{FOOD_INGREDIENT_MANUAL_FILE}'.")
+def load_food_nutrients(fdc_ids):
+    """Returns the nutrients of the foods as {fdc_id: {nutrient_id: amount}}; a food without any nutrient is left out."""
+    print("Loading databases...")
+    db = {}
+    for file in (FOOD_NUTRIENT_FILE, FOOD_NUTRIENT_MANUAL_FILE):
+        if not file.exists():
+            continue
+        # 'utf-8-sig' prevents the ﻿ header bug common with Windows CSVs
+        with open(file, "r", encoding="utf-8-sig", newline="") as f:
+            for line, row in enumerate(csv.DictReader(f), start=2):
+                try:
+                    fdc_id = int(row["fdc_id"])
+                    if fdc_id in fdc_ids:
+                        db.setdefault(fdc_id, {})[int(row["nutrient_id"])] = float(row["amount"])
+                except (KeyError, TypeError, ValueError) as e:
+                    raise ValueError(f"Malformed row {line} in {file}: {row}") from e
+    return db
 
 
-def food_ingredient_block(fdc_ids):
-    """Formats the saved ingredients of the foods for a prompt; None if they have none."""
-    rows = [row for row in load_food_ingredients() if int(row[0]) in fdc_ids]
-    return ingredient_block(rows) if rows else None
+def parse_food_nutrient_csv(text, known_fdc_ids):
+    """Strictly validates a food_nutrient CSV answer and returns its data rows.
 
+    Every food of the csv must have a row for every nutrient of daily_need_table.csv.
+    """
+    header, rows = _split_header(list(csv.reader(io.StringIO(extract_csv(text)))), "The clipboard CSV")
+    check_header(header, FOOD_NUTRIENT_HEADER, "the clipboard")
+    if not rows:
+        raise ValueError("No data rows found in the clipboard CSV (only header).")
 
-def updated_nutrient_blocks(foods, rows):
-    """Returns the start of a prompt checking nutrient rows just saved: the needs, the foods, their ingredients, the rows."""
-    blocks = [
-        daily_need_block(),
-        food_manual_block(foods),
-        food_ingredient_block({fdc_id for fdc_id, _ in foods}),
-        file_block("Rows updated in food_nutrient_manual.csv", rows_to_csv(FOOD_NUTRIENT_HEADER, rows)),
+    seen = set()
+    given = {}
+    for line, row in enumerate(rows, start=2):
+        if len(row) != len(FOOD_NUTRIENT_HEADER):
+            raise ValueError(
+                f"Malformed CSV at row {line}: expected {len(FOOD_NUTRIENT_HEADER)} columns, "
+                f"but found {len(row)}.\nRow data: {row}"
+            )
+        fdc_id = _to_int(row[1], f"fdc_id at row {line}")
+        nutrient_id = _to_int(row[2], f"nutrient_id at row {line}")
+        if _to_float(row[3], f"amount at row {line}") < 0:
+            raise ValueError(f"Negative amount at row {line}.")
+        if fdc_id not in known_fdc_ids:
+            raise ValueError(f"Unexpected fdc_id {fdc_id} at row {line}. Expected one of {sorted(known_fdc_ids)}.")
+        if (fdc_id, nutrient_id) in seen:
+            raise ValueError(f"Nutrient {nutrient_id} is given twice for the food {fdc_id} (row {line}).")
+        seen.add((fdc_id, nutrient_id))
+        given.setdefault(fdc_id, set()).add(nutrient_id)
+
+    needed = {nutrient_id for need in load_daily_needs() for nutrient_id in need["ids"]}
+    missing = [
+        f"- food {fdc_id}: nutrient_id {', '.join(map(str, sorted(needed - nutrient_ids)))}"
+        for fdc_id, nutrient_ids in given.items() if needed - nutrient_ids
     ]
-    return "\n\n".join(block for block in blocks if block)
+    if missing:
+        raise ValueError("Data missing for:\n" + "\n".join(missing))
+    return rows
 
 
 # ---------------------------------------------------------
@@ -490,132 +519,3 @@ def daily_need_block(with_targets=False):
     if not with_targets:
         header, rows = header[:3], [row[:3] for row in rows]
     return file_block(DAILY_NEED_FILE.name, rows_to_csv(header, rows))
-
-
-# ---------------------------------------------------------
-# LLM answers
-# ---------------------------------------------------------
-def parse_food_nutrient_csv(text, known_fdc_ids):
-    """Strictly validates a food_nutrient CSV answer and returns its data rows.
-
-    Every food of the csv must have a row for every nutrient of daily_need_table.csv.
-    """
-    header, rows = _split_header(list(csv.reader(io.StringIO(extract_csv(text)))), "The clipboard CSV")
-    check_header(header, FOOD_NUTRIENT_HEADER, "the clipboard")
-    if not rows:
-        raise ValueError("No data rows found in the clipboard CSV (only header).")
-
-    seen = set()
-    given = {}
-    for line, row in enumerate(rows, start=2):
-        if len(row) != len(FOOD_NUTRIENT_HEADER):
-            raise ValueError(
-                f"Malformed CSV at row {line}: expected {len(FOOD_NUTRIENT_HEADER)} columns, "
-                f"but found {len(row)}.\nRow data: {row}"
-            )
-        fdc_id = _to_int(row[1], f"fdc_id at row {line}")
-        nutrient_id = _to_int(row[2], f"nutrient_id at row {line}")
-        if _to_float(row[3], f"amount at row {line}") < 0:
-            raise ValueError(f"Negative amount at row {line}.")
-        if fdc_id not in known_fdc_ids:
-            raise ValueError(f"Unexpected fdc_id {fdc_id} at row {line}. Expected one of {sorted(known_fdc_ids)}.")
-        if (fdc_id, nutrient_id) in seen:
-            raise ValueError(f"Nutrient {nutrient_id} is given twice for the food {fdc_id} (row {line}).")
-        seen.add((fdc_id, nutrient_id))
-        given.setdefault(fdc_id, set()).add(nutrient_id)
-
-    needed = {nutrient_id for need in load_daily_needs() for nutrient_id in need["ids"]}
-    missing = [
-        f"- food {fdc_id}: nutrient_id {', '.join(map(str, sorted(needed - nutrient_ids)))}"
-        for fdc_id, nutrient_ids in given.items() if needed - nutrient_ids
-    ]
-    if missing:
-        raise ValueError("Data missing for:\n" + "\n".join(missing))
-    return rows
-
-
-def parse_ingredient_csv(text, known_fdc_ids, foods):
-    """Strictly validates a (food, ingredient, quantity) CSV answer and returns its rows (see load_food_ingredients).
-
-    foods ({fdc_id: description}) are the foods an ingredient can be. Without ingredient_fdc_id, or with
-    NEW_INGREDIENT instead (kept as it is in the rows), the row needs a description.
-    """
-    header, rows = _split_header(list(csv.reader(io.StringIO(extract_csv(text)))), "The clipboard CSV")
-    columns = [col.lower() for col in header]
-    # The descriptions are optional: the LLM may also answer with the columns of the table it was shown
-    if columns not in (FOOD_INGREDIENT_HEADER, FOOD_INGREDIENT_CHECK_HEADER):
-        check_header(header, FOOD_INGREDIENT_DESCRIBED_HEADER, "the clipboard")
-    if not rows:
-        raise ValueError("No data rows found in the clipboard CSV (only header).")
-
-    parsed = []
-    seen = set()
-    unknown = []
-    for line, row in enumerate(rows, start=2):
-        if len(row) != len(columns):
-            raise ValueError(
-                f"Malformed CSV at row {line}: expected {len(columns)} columns, but found {len(row)}.\nRow data: {row}"
-            )
-        record = dict(zip(columns, row))
-        fdc_id = _to_int(record["fdc_id"], f"fdc_id at row {line}")
-        quantity = _to_float(record["quantity"], f"quantity at row {line}")
-        description = record.get("ingredient_description", "")
-        ingredient_id = record["ingredient_fdc_id"].lower()
-        if ingredient_id in ("", NEW_INGREDIENT):
-            if not description:
-                raise ValueError(f"Row {line} has neither an ingredient_fdc_id nor an ingredient_description.")
-        else:
-            ingredient_id = _to_int(ingredient_id, f"ingredient_fdc_id at row {line}")
-            if ingredient_id not in foods:
-                unknown.append((line, ingredient_id, description))
-            if ingredient_id == fdc_id:
-                raise ValueError(f"The food {fdc_id} is given as its own ingredient (row {line}).")
-        if fdc_id not in known_fdc_ids:
-            raise ValueError(f"Unexpected fdc_id {fdc_id} at row {line}. Expected one of {sorted(known_fdc_ids)}.")
-        if quantity <= 0:
-            raise ValueError(f"Invalid quantity {quantity} at row {line}.")
-        key = (fdc_id, ingredient_id if isinstance(ingredient_id, int) else description.lower())
-        if key in seen:
-            raise ValueError(f"The ingredient {key[1]} is given twice for the food {fdc_id} (row {line}).")
-        seen.add(key)
-        parsed.append([str(fdc_id), str(ingredient_id), description, f"{quantity:g}"])
-
-    # All of them at once, so that the LLM corrects them in one go
-    if unknown:
-        message = (
-            f"Those ingredient_fdc_id exist neither in SR Legacy 2018 (a SR Legacy fdc_id is between 167512 "
-            f"and 175304, it is not a NDB number) nor in {FOOD_MANUAL_FILE.name}:\n"
-            + "\n".join(f"- row {line}: {ingredient_id}" for line, ingredient_id, _ in unknown)
-        )
-        described = [description for _, _, description in unknown if description]
-        if described:
-            # Its memory of the IDs is not reliable: give it the real ones to choose from
-            message += (
-                "\nDo not guess another ID: take it from those foods, searched from your descriptions:\n"
-                + candidates_block(described, foods)
-            )
-        raise ValueError(message)
-    return parsed
-
-
-def parse_diet_csv(text):
-    """Strictly validates a (food ID, quantity) CSV answer and returns {fdc_id: quantity}."""
-    rows = [
-        [cell.strip() for cell in row]
-        for row in csv.reader(io.StringIO(extract_csv(text))) if any(cell.strip() for cell in row)
-    ]
-    diet = {}
-    for line, row in enumerate(rows, start=1):
-        if len(row) != 2:
-            raise ValueError(f"Malformed CSV at row {line}: expected 2 columns, but found {len(row)}.\nRow data: {row}")
-        # The first row may be a header
-        if line == 1 and not row[0].isdigit():
-            continue
-        fdc_id = _to_int(row[0], f"food ID at row {line}")
-        quantity = _to_float(row[1], f"quantity at row {line}")
-        if quantity <= 0:
-            raise ValueError(f"Invalid quantity {quantity} at row {line}.")
-        diet[fdc_id] = diet.get(fdc_id, 0.0) + quantity
-    if not diet:
-        raise ValueError("No data rows found in the clipboard CSV.")
-    return diet

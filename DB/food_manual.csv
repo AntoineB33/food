@@ -1,12 +1,5 @@
-fdc_id,description
-1,"Tofu scramble, with kale and bell peppers, vegan"
-2,"Tempeh and roasted vegetable quinoa bowl, vegan"
-3,"Pea and rice protein shake with soy milk, vegan"
-4,"Seitan and broccoli stir-fry with edamame, vegan"
-5,Oats cooked with chia seeds and blueberries
-6,Algae Oil
-7,Vitamin D3 (Lichen)
-8,Vitamin B12
-9,Creatine monohydrate
-10,Pea and rice protein blend
-11,Nutritional yeast
+fdc_id,description,unit
+6,Algae Oil,g
+9,Creatine monohydrate,g
+10,Pea and rice protein blend,g
+11,Nutritional yeast,g

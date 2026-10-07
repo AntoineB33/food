@@ -8,54 +8,30 @@
 
 Purpose: get a vegan menu.
 
-## 2. New foods
+## 2. Ingredients
 
-1. Run `2.0_get_food_prompt`.
-2. Paste in the same discussion.
-3. Copy the list of foods.
-4. Run `2.5_check`.
-5. Put the menu in a new discussion and paste below it.
-6. Copy the list, corrected if Gemini corrected it.
-
-Purpose: list the foods of the menu that no database has.
-
-## 3. Ingredients
-
-1. With the list of foods copied, run `2.6_get_ingredient_prompt` and answer `y`.
+1. Run `2.0_get_ingredient_prompt`.
 2. Put the menu in a new discussion and paste below it.
 3. Copy the csv.
-4. Run `2.7_check_ingr`. Answer `y` if it asks to add ingredients.
+4. Run `2.5_check_ingr`. Answer `y` if it asks to add ingredients.
 5. Put the menu in a new discussion and paste below it.
 6. If Gemini writes a csv, copy it and go back to 4. If it says the table is correct, go on.
 
-Purpose: give each new food its ingredients, with the right IDs.
+Purpose: turn the menu into a list of foods of the databases, each with its amount for the day.
 
-## 4. Nutrients
+## 3. Nutrients of the new foods
 
-1. Run `2.9_check_nutr`.
+1. Run `3.0_get_nutr_prompt`. If the window says there is nothing to ask, go to chapter 4.
 2. Paste in a new discussion and copy the csv.
-3. Run `3.0_check_nutr`.
-4. If the window of 2.9 said `NOTHING IS SUMMED YET`, go back to 1.
-5. Paste in a new discussion.
-6. If Gemini writes a csv, copy it and go back to 3. If it says it is correct, go on.
-7. Run `3.9_checked`.
+3. Run `3.5_check_nutr`.
+4. Paste in a new discussion.
+5. If Gemini writes a csv, copy it and go back to 3. If it says it is correct, go on.
 
-Purpose: compute the nutrients of each new food from its ingredients, and have them checked.
+Purpose: get the nutrients of the ingredients that no database has.
 
-## 5. Quantities
+## 4. Report
 
-1. Run `4.0_get_food_qtt_prompt`.
-2. Put the menu in a new discussion and paste below it.
-3. Copy the csv.
-4. Run `4.5_check`.
-5. Paste in a new discussion.
-6. Copy the csv, corrected if Gemini corrected it.
-
-Purpose: turn the menu into a list of food IDs and quantities.
-
-## 6. Report
-
-1. With the quantity csv copied, run `5.0_get_imbalance_prompt`.
+1. Run `4.0_get_report`.
 2. Paste in the discussion of the menu.
 3. If Gemini adjusts the menu, start again at chapter 2 with the new menu.
 
