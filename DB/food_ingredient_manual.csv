@@ -1,27 +1,27 @@
-fdc_id,ingredient_fdc_id,quantity
-1,172448,0.556
-1,168421,0.278
-1,170108,0.166
-2,174272,0.18
-2,168917,0.333
-2,173735,0.153
-2,169292,0.18
-2,170394,0.09
-2,171413,0.026
-2,167747,0.027
-2,175043,0.011
-3,175215,0.599
-3,173944,0.29
-3,173181,0.111
-4,168147,0.249
-4,168411,0.156
-4,170379,0.28
-4,168907,0.237
-4,171016,0.029
-4,174278,0.033
-4,169230,0.006
-4,169231,0.01
-5,173904,0.362
-5,170554,0.072
-5,171711,0.537
-5,170569,0.029
+fdc_id,ingredient_fdc_id,ingredient_description,quantity
+1,172475,"Tofu, raw, firm, prepared with calcium sulfate",0.5555
+1,168421,"Kale, raw",0.2778
+1,170108,"Peppers, sweet, red, raw",0.1667
+2,174272,Tempeh,0.1987
+2,168917,"Quinoa, cooked",0.3674
+2,173735,"Beans, black, mature seeds, cooked, boiled, without salt",0.1688
+2,169292,"Squash, summer, zucchini, includes skin, cooked, boiled, drained, without salt",0.0993
+2,170394,"Carrots, cooked, boiled, drained, without salt",0.0993
+2,171413,"Oil, olive, salad or cooking",0.0268
+2,167747,"Lemon juice, raw",0.0298
+2,11,Nutritional yeast,0.0099
+3,10,Pea and rice protein blend,0.1095
+3,9,Creatine monohydrate,0.0122
+3,173765,"Soymilk (All flavors), enhanced",0.5912
+3,173944,"Bananas, raw",0.2871
+4,168147,Vital wheat gluten,0.2509
+4,168411,"Edamame, frozen, prepared",0.1567
+4,169967,"Broccoli, cooked, boiled, drained, without salt",0.2821
+4,168907,"Noodles, japanese, soba, cooked",0.2382
+4,171016,"Oil, sesame, salad or cooking",0.0282
+4,172473,"Soy sauce made from soy and wheat (shoyu), low sodium",0.0334
+4,169230,"Garlic, raw",0.0063
+4,169231,"Ginger root, raw",0.0042
+5,173904,"Cereals, oats, regular and quick, not fortified, dry",0.3677
+5,170554,"Seeds, chia seeds, dried",0.0882
+5,171711,"Blueberries, raw",0.5441

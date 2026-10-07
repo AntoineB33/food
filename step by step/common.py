@@ -5,6 +5,7 @@ prompt to the clipboard. Anything wrong raises, so the .bat pauses on the error.
 """
 import csv
 import io
+import math
 import os
 import re
 from pathlib import Path
@@ -27,6 +28,12 @@ FOOD_MANUAL_HEADER = ["fdc_id", "description"]
 FOOD_INGREDIENT_HEADER = ["fdc_id", "ingredient_fdc_id", "quantity"]
 # How the ingredients are shown in a prompt: the LLM may answer with this description column too
 FOOD_INGREDIENT_DESCRIBED_HEADER = ["fdc_id", "ingredient_fdc_id", "ingredient_description", "quantity"]
+# How they are shown to be checked: what the LLM meant, next to what its ID really is
+FOOD_INGREDIENT_CHECK_HEADER = [
+    "fdc_id", "ingredient_fdc_id", "ingredient_description", "real_description", "quantity",
+]
+# What the LLM writes as ingredient_fdc_id for an ingredient that is in no food database
+NEW_INGREDIENT = "new"
 FOOD_NUTRIENT_HEADER = [
     "id", "fdc_id", "nutrient_id", "amount", "data_points",
     "derivation_id", "min", "max", "median",
@@ -136,8 +143,10 @@ def file_block(name, csv_text):
 
 def extract_csv(text):
     """Returns the CSV text of an LLM answer, with or without a markdown block around it."""
-    match = re.search(r"```[^\n]*\n(.*?)```", text, re.DOTALL)
-    csv_text = (match.group(1) if match else text).strip()
+    blocks = re.findall(r"```([^\n]*)\n(.*?)```", text, re.DOTALL)
+    # The LLM may show the code it ran before its answer: the answer is the last csv block, or else the last block
+    csv_blocks = [content for language, content in blocks if language.strip().lower() == "csv"]
+    csv_text = (csv_blocks or [content for _, content in blocks] or [text])[-1].strip()
     if not csv_text:
         raise ValueError("No CSV content found in the clipboard.")
     return csv_text
@@ -161,7 +170,10 @@ def _to_float(value, what):
 # food_manual.csv
 # ---------------------------------------------------------
 def load_food_manual():
-    """Returns the manual foods as a list of (fdc_id, description)."""
+    """Returns the manual foods as a list of (fdc_id, description); none if the file does not exist yet."""
+    # add_new_foods creates the file with the first foods
+    if not FOOD_MANUAL_FILE.exists():
+        return []
     header, rows = read_csv(FOOD_MANUAL_FILE)
     check_header(header, FOOD_MANUAL_HEADER, FOOD_MANUAL_FILE)
     foods = []
@@ -177,6 +189,13 @@ def load_sr_legacy_foods():
     header, rows = read_csv(FOOD_FILE)
     id_col, description_col = header.index("fdc_id"), header.index("description")
     return {int(row[id_col]): row[description_col] for row in rows}
+
+
+def load_all_foods():
+    """Returns the SR Legacy and the manual foods as {fdc_id: description}."""
+    foods = load_sr_legacy_foods()
+    foods.update(load_food_manual())
+    return foods
 
 
 def parse_food_list(text):
@@ -229,8 +248,7 @@ def unchecked_foods(foods):
 
 def describe_diet(diet):
     """Returns the diet as rows of [fdc_id, description, quantity]; raises on the IDs that are in no food database."""
-    descriptions = load_sr_legacy_foods()
-    descriptions.update(load_food_manual())
+    descriptions = load_all_foods()
 
     unknown = [fdc_id for fdc_id in diet if fdc_id not in descriptions]
     if unknown:
@@ -300,39 +318,103 @@ def save_to_nutrient_manual(rows):
 
 
 def ingredient_block(rows):
-    """Formats rows of [fdc_id, ingredient_fdc_id, quantity] for a prompt, with the SR Legacy description of each ingredient."""
-    sr_legacy = load_sr_legacy_foods()
+    """Formats ingredient rows (see load_food_ingredients) for a prompt, with the real description of each ingredient.
+
+    An ingredient without ID keeps the description the LLM gave it.
+    """
+    foods = load_all_foods()
     return file_block(
         f"{FOOD_INGREDIENT_MANUAL_FILE.name} (quantity: 1 means 100g, in 100g of the food item)",
         rows_to_csv(
             FOOD_INGREDIENT_DESCRIBED_HEADER,
-            [[fdc_id, ingredient_id, sr_legacy[int(ingredient_id)], quantity] for fdc_id, ingredient_id, quantity in rows],
+            [
+                [fdc_id, ingredient_id, foods[int(ingredient_id)] if ingredient_id else description, quantity]
+                for fdc_id, ingredient_id, description, quantity in rows
+            ],
+        ),
+    )
+
+
+def _words(description):
+    """Returns the words of a food description, without their plural, to compare descriptions."""
+    return {word.rstrip("s") for word in re.findall(r"[a-z]+", description.lower()) if len(word) > 2}
+
+
+def same_description(a, b):
+    return " ".join(a.lower().split()) == " ".join(b.lower().split())
+
+
+def food_candidates(descriptions, foods, limit=10):
+    """Returns the foods ({fdc_id: description}) the closest to each description, as {description: [(fdc_id, description)]}."""
+    index = {fdc_id: _words(description) for fdc_id, description in foods.items()}
+    counts = {}
+    for words in index.values():
+        for word in words:
+            counts[word] = counts.get(word, 0) + 1
+
+    candidates = {}
+    for description in dict.fromkeys(descriptions):
+        wanted = _words(description)
+        # What comes before the first comma names the food ("Broccoli, stir-fried"): it counts more than its state
+        named = _words(description.split(",")[0])
+        scored = []
+        for fdc_id, words in index.items():
+            # A rare word ("kale") tells more than a common one ("raw")
+            score = sum(
+                math.log(len(index) / counts[word]) * (3 if word in named else 1) for word in wanted & words
+            )
+            if score:
+                scored.append((-score, len(words - wanted), fdc_id))
+        candidates[description] = [(fdc_id, foods[fdc_id]) for _, _, fdc_id in sorted(scored)[:limit]]
+    return candidates
+
+
+def candidates_block(descriptions, foods):
+    """Formats the foods ({fdc_id: description}) the closest to each description for a prompt; '' without description."""
+    return "\n".join(
+        f'- "{description}":'
+        + ("".join(f"\n  {fdc_id}: {found}" for fdc_id, found in candidates) or "\n  nothing found")
+        for description, candidates in food_candidates(descriptions, foods).items()
+    )
+
+
+def ingredient_check_block(rows, foods):
+    """Formats ingredient rows (see load_food_ingredients) to be checked: the description the LLM gave to each
+    ingredient next to the real one of its ID, from foods ({fdc_id: description})."""
+    return file_block(
+        f"{FOOD_INGREDIENT_MANUAL_FILE.name} (quantity: 1 means 100g, in 100g of the food item)",
+        rows_to_csv(
+            FOOD_INGREDIENT_CHECK_HEADER,
+            [
+                [fdc_id, ingredient_id, description, foods[int(ingredient_id)] if ingredient_id else "", quantity]
+                for fdc_id, ingredient_id, description, quantity in rows
+            ],
         ),
     )
 
 
 def load_food_ingredients():
-    """Returns the rows of food_ingredient_manual.csv, as [fdc_id, ingredient_fdc_id, quantity]."""
+    """Returns the rows of food_ingredient_manual.csv, as [fdc_id, ingredient_fdc_id, ingredient_description, quantity].
+
+    ingredient_fdc_id is the ID of a SR Legacy food or of another manual food. It is empty for an ingredient
+    that is not identified yet: only its description tells what it is.
+    """
     if not FOOD_INGREDIENT_MANUAL_FILE.exists():
         return []
     header, rows = read_csv(FOOD_INGREDIENT_MANUAL_FILE)
-    check_header(header, FOOD_INGREDIENT_HEADER, FOOD_INGREDIENT_MANUAL_FILE)
+    if [col.lower() for col in header] == FOOD_INGREDIENT_HEADER:
+        # Written before the descriptions were kept
+        return [[row[0], row[1], "", row[2]] for row in rows]
+    check_header(header, FOOD_INGREDIENT_DESCRIBED_HEADER, FOOD_INGREDIENT_MANUAL_FILE)
     return rows
 
 
-def save_to_ingredient_manual(ingredients):
-    """Writes {fdc_id: {ingredient_fdc_id: quantity}} to food_ingredient_manual.csv, replacing the rows of the same foods.
-
-    Returns the rows as they are written.
-    """
-    kept = [row for row in load_food_ingredients() if int(row[0]) not in ingredients]
-    rows = [
-        [str(fdc_id), str(ingredient_id), f"{quantity:g}"]
-        for fdc_id, food_ingredients in ingredients.items() for ingredient_id, quantity in food_ingredients.items()
-    ]
-    write_csv(FOOD_INGREDIENT_MANUAL_FILE, FOOD_INGREDIENT_HEADER, kept + rows)
+def save_to_ingredient_manual(rows):
+    """Writes ingredient rows (see load_food_ingredients) to food_ingredient_manual.csv, replacing the rows of the same foods."""
+    new_foods = {row[0] for row in rows}
+    kept = [row for row in load_food_ingredients() if row[0] not in new_foods]
+    write_csv(FOOD_INGREDIENT_MANUAL_FILE, FOOD_INGREDIENT_DESCRIBED_HEADER, kept + rows)
     print(f"Successfully wrote {len(rows)} ingredient records to '{FOOD_INGREDIENT_MANUAL_FILE}'.")
-    return rows
 
 
 def food_ingredient_block(fdc_ids):
@@ -452,50 +534,68 @@ def parse_food_nutrient_csv(text, known_fdc_ids):
     return rows
 
 
-def parse_ingredient_csv(text, known_fdc_ids, sr_legacy_ids):
-    """Strictly validates a (food, ingredient, quantity) CSV answer and returns {fdc_id: {ingredient_fdc_id: quantity}}."""
+def parse_ingredient_csv(text, known_fdc_ids, foods):
+    """Strictly validates a (food, ingredient, quantity) CSV answer and returns its rows (see load_food_ingredients).
+
+    foods ({fdc_id: description}) are the foods an ingredient can be. Without ingredient_fdc_id, or with
+    NEW_INGREDIENT instead (kept as it is in the rows), the row needs a description.
+    """
     header, rows = _split_header(list(csv.reader(io.StringIO(extract_csv(text)))), "The clipboard CSV")
-    if [col.lower() for col in header] == FOOD_INGREDIENT_DESCRIBED_HEADER:
-        # The description is only there for the LLM: the ID alone tells which food it is
-        for line, row in enumerate(rows, start=2):
-            if len(row) != len(header):
-                raise ValueError(
-                    f"Malformed CSV at row {line}: expected {len(header)} columns, but found {len(row)}.\nRow data: {row}"
-                )
-        rows = [row[:2] + row[3:] for row in rows]
-    else:
-        check_header(header, FOOD_INGREDIENT_HEADER, "the clipboard")
+    columns = [col.lower() for col in header]
+    # The descriptions are optional: the LLM may also answer with the columns of the table it was shown
+    if columns not in (FOOD_INGREDIENT_HEADER, FOOD_INGREDIENT_CHECK_HEADER):
+        check_header(header, FOOD_INGREDIENT_DESCRIBED_HEADER, "the clipboard")
     if not rows:
         raise ValueError("No data rows found in the clipboard CSV (only header).")
 
-    ingredients = {}
-    not_in_sr_legacy = []
+    parsed = []
+    seen = set()
+    unknown = []
     for line, row in enumerate(rows, start=2):
-        if len(row) != len(FOOD_INGREDIENT_HEADER):
+        if len(row) != len(columns):
             raise ValueError(
-                f"Malformed CSV at row {line}: expected {len(FOOD_INGREDIENT_HEADER)} columns, "
-                f"but found {len(row)}.\nRow data: {row}"
+                f"Malformed CSV at row {line}: expected {len(columns)} columns, but found {len(row)}.\nRow data: {row}"
             )
-        fdc_id = _to_int(row[0], f"fdc_id at row {line}")
-        ingredient_id = _to_int(row[1], f"ingredient_fdc_id at row {line}")
-        quantity = _to_float(row[2], f"quantity at row {line}")
+        record = dict(zip(columns, row))
+        fdc_id = _to_int(record["fdc_id"], f"fdc_id at row {line}")
+        quantity = _to_float(record["quantity"], f"quantity at row {line}")
+        description = record.get("ingredient_description", "")
+        ingredient_id = record["ingredient_fdc_id"].lower()
+        if ingredient_id in ("", NEW_INGREDIENT):
+            if not description:
+                raise ValueError(f"Row {line} has neither an ingredient_fdc_id nor an ingredient_description.")
+        else:
+            ingredient_id = _to_int(ingredient_id, f"ingredient_fdc_id at row {line}")
+            if ingredient_id not in foods:
+                unknown.append((line, ingredient_id, description))
+            if ingredient_id == fdc_id:
+                raise ValueError(f"The food {fdc_id} is given as its own ingredient (row {line}).")
         if fdc_id not in known_fdc_ids:
             raise ValueError(f"Unexpected fdc_id {fdc_id} at row {line}. Expected one of {sorted(known_fdc_ids)}.")
-        if ingredient_id not in sr_legacy_ids:
-            not_in_sr_legacy.append(f"- row {line}: {ingredient_id}")
         if quantity <= 0:
             raise ValueError(f"Invalid quantity {quantity} at row {line}.")
-        if ingredient_id in ingredients.setdefault(fdc_id, {}):
-            raise ValueError(f"The ingredient {ingredient_id} is given twice for the food {fdc_id} (row {line}).")
-        ingredients[fdc_id][ingredient_id] = quantity
+        key = (fdc_id, ingredient_id if isinstance(ingredient_id, int) else description.lower())
+        if key in seen:
+            raise ValueError(f"The ingredient {key[1]} is given twice for the food {fdc_id} (row {line}).")
+        seen.add(key)
+        parsed.append([str(fdc_id), str(ingredient_id), description, f"{quantity:g}"])
 
     # All of them at once, so that the LLM corrects them in one go
-    if not_in_sr_legacy:
-        raise ValueError(
-            "Those ingredient_fdc_id do not exist in SR Legacy 2018 (a SR Legacy fdc_id is between 167512 "
-            "and 175304, it is not a NDB number):\n" + "\n".join(not_in_sr_legacy)
+    if unknown:
+        message = (
+            f"Those ingredient_fdc_id exist neither in SR Legacy 2018 (a SR Legacy fdc_id is between 167512 "
+            f"and 175304, it is not a NDB number) nor in {FOOD_MANUAL_FILE.name}:\n"
+            + "\n".join(f"- row {line}: {ingredient_id}" for line, ingredient_id, _ in unknown)
         )
-    return ingredients
+        described = [description for _, _, description in unknown if description]
+        if described:
+            # Its memory of the IDs is not reliable: give it the real ones to choose from
+            message += (
+                "\nDo not guess another ID: take it from those foods, searched from your descriptions:\n"
+                + candidates_block(described, foods)
+            )
+        raise ValueError(message)
+    return parsed
 
 
 def parse_diet_csv(text):

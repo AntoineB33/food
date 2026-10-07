@@ -4,6 +4,7 @@ from common import (
     FOOD_NUTRIENT_MANUAL_FILE,
     NUTRIENT_ID_NOTE,
     get_clipboard,
+    load_food_ingredients,
     load_food_manual,
     parse_food_nutrient_csv,
     read_csv,
@@ -26,10 +27,11 @@ if __name__ == "__main__":
     try:
         rows = parse_food_nutrient_csv(get_clipboard(), {fdc_id for fdc_id, _ in foods})
 
-        # Every new food must have nutrients, from this csv or from the sums of step 2.9
+        # Every new food without ingredient must have nutrients: the others get them from the sums of step 2.9
         covered = {int(row[1]) for row in rows}
         if FOOD_NUTRIENT_MANUAL_FILE.exists():
             covered |= {int(row[1]) for row in read_csv(FOOD_NUTRIENT_MANUAL_FILE)[1]}
+        covered |= {int(row[0]) for row in load_food_ingredients()}
         missing = [f"{fdc_id} ({description})" for fdc_id, description in foods if fdc_id not in covered]
         if missing:
             raise ValueError(f"The csv gives no nutrient for the foods: {', '.join(missing)}")

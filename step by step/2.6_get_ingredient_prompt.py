@@ -10,8 +10,8 @@ from common import (
 )
 
 PROMPT = """For each food item of this list, give all its ingredients. Write a text easy to copy in a csv format with those columns:
-"fdc_id","ingredient_fdc_id","quantity"
-fdc_id is the ID of the food item in food_manual.csv. ingredient_fdc_id is the ID of the ingredient in SR Legacy 2018 (fdc.nal.usda.gov): its fdc_id (between 167512 and 175304), not its NDB number. quantity is the amount of the ingredient in 100g of the food item, as a number where 1 means 100g.
+"fdc_id","ingredient_fdc_id","ingredient_description","quantity"
+fdc_id is the ID of the food item in food_manual.csv. ingredient_fdc_id is the ID of the ingredient in SR Legacy 2018 (fdc.nal.usda.gov): its fdc_id (between 167512 and 175304), not its NDB number. ingredient_description is the description of the ingredient with its state (e.g. "Kale, raw"): the IDs are verified against it. quantity is the amount of the ingredient in 100g of the food item, as a number where 1 means 100g.
 Write one row per ingredient. Leave out the food items that have no ingredient in SR Legacy (e.g. a supplement)."""
 
 
