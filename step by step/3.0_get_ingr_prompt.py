@@ -58,4 +58,4 @@ if __name__ == "__main__":
         sys.exit("Every food of the menu already has its nutrients: nothing to ask the LLM. Go on with 5.0_get_report.")
 
     set_clipboard(f"{food_manual_block()}\n\n{new_food_block(new_foods)}\n\n{PROMPT}")
-    print("Paste it in a new discussion, copy the csv of the ingredients, then run 3.5_check_ingr.")
+    print("Paste it in a new discussion, copy the csv of the ingredients, then run 3.5_copy_ingr_then_check.")

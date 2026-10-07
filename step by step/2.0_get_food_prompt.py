@@ -23,4 +23,4 @@ Write a text easy to copy in a csv format with those columns:
 if __name__ == "__main__":
     # The menu saved at step 1.5
     set_clipboard(f"{menu_block(load_menu(), load_all_foods())}\n\n{food_manual_block()}\n\n{PROMPT}")
-    print("Paste it in a new discussion, copy the csv of the foods, then run 2.5_check_food.")
+    print("Paste it in a new discussion, copy the csv of the foods, then run 2.5_copy_foods_then_check.")

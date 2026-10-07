@@ -142,4 +142,4 @@ if __name__ == "__main__":
         f"{ingredient_block([fdc_id for fdc_id, _, _ in new_foods], foods)}\n\n{prompt}"
     )
     print("Paste it in a new discussion. If the LLM writes a corrected csv, copy it and run this step again to save it.")
-    print("If it says it is correct, go on with 4.0_check_nutr.")
+    print("If it says it is correct, go on with 4.0_copy_nutr_if_given_then_check.")

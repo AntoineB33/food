@@ -5,4 +5,4 @@ PROMPT = f"""Give me a vegan menu for a day that satisfies all the daily nutrien
 
 if __name__ == "__main__":
     set_clipboard(f"{daily_need_block()}\n\n{PROMPT}")
-    print("Paste it in a new discussion, copy the csv of the menu, then run 1.5_check_menu.")
+    print("Paste it in a new discussion, copy the csv of the menu, then run 1.5_copy_menu_then_check.")

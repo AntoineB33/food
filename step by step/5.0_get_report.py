@@ -82,4 +82,4 @@ if __name__ == "__main__":
         print("No nutrition lacks or excesses found. The menu satisfies the daily needs!")
     else:
         set_clipboard(f"{daily_need_block()}\n\n{menu_block(load_menu(), descriptions)}\n\n{report}\n\n{PROMPT}")
-        print("Paste it in a new discussion, copy the csv of the corrected menu, run 1.5_check_menu to save it, then go on from 2.0_get_food_prompt.")
+        print("Paste it in a new discussion, copy the csv of the corrected menu, run 1.5_copy_menu_then_check to save it, then go on from 2.0_get_food_prompt.")
