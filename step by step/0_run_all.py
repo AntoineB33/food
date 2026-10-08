@@ -54,18 +54,44 @@ def save_state(current, result, prompt):
     )
 
 
+def holds_prompt(prompt):
+    """Whether the clipboard still holds the prompt, whatever its blanks and line ends became."""
+    return prompt is not None and pyperclip.paste().split() == prompt.split()
+
+
+def tell_clipboard(prompt):
+    """Says whether the clipboard holds the prompt, for the user who forgot what was copied last."""
+    text = pyperclip.paste().strip()
+    if prompt is None:
+        print("This step gave no prompt.")
+    elif holds_prompt(prompt):
+        print("The clipboard holds the prompt: nothing was copied since. Paste it to the LLM if you did not yet.")
+    elif not text:
+        print("The clipboard is empty or holds no text: type c to copy the prompt again.")
+    else:
+        start = " ".join(text.split())
+        print(
+            f"The clipboard does not hold the prompt, but a text of {len(text)} characters that may be the answer "
+            f"of the LLM. It starts with:\n    {start[:150]}{'...' if len(start) > 150 else ''}"
+        )
+
+
 def ask(question, prompt=None, answers=()):
     """Asks until the answer is one of the answers, the number of a step to jump to, or q to quit.
 
-    c copies the prompt again instead of answering. Returns the answer in lower case, empty for Enter.
+    c copies the prompt again and w tells what the clipboard holds, instead of answering. Returns the answer in
+    lower case, empty for Enter.
     """
     while True:
         answer = input(
-            f"\n>>> {question}\n    (c to copy the prompt again, the number of a step to jump to it, q to quit): "
+            f"\n>>> {question}\n    (c to copy the prompt again, w to know whether the clipboard holds it, "
+            "the number of a step to jump to it, q to quit): "
         ).strip().lower()
         if answer == "q":
             sys.exit()
-        if answer == "c":
+        if answer == "w":
+            tell_clipboard(prompt)
+        elif answer == "c":
             if prompt is None:
                 print("This step gave no prompt.")
             else:
@@ -134,7 +160,7 @@ def ask_what_next(current, result, prompt):
                 answers=("y",),
             )
             # Enter with the prompt still in the clipboard would give the script its own prompt to read
-            if answer or pyperclip.paste().split() != (prompt or "").split():
+            if answer or not holds_prompt(prompt):
                 break
             print("The clipboard still holds the prompt: copy the answer of the LLM first, or type y if it says it is correct.")
         if not answer:
