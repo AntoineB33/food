@@ -1,24 +1,24 @@
-menu,date,fdc_id,description,amount,unit
-1,2026-10-08,172475,"Tofu, firm, calcium set, raw",200,g
-1,2026-10-08,168147,"Seitan, cooked",50,g
-1,2026-10-08,172421,"Lentils, cooked",300,g
-1,2026-10-08,173904,"Oats, dry",125,g
-1,2026-10-08,168483,"Sweet potato, baked",100,g
-1,2026-10-08,169967,"Broccoli, cooked",200,g
-1,2026-10-08,168463,"Spinach, cooked",100,g
-1,2026-10-08,170108,"Red bell pepper, raw",100,g
-1,2026-10-08,173944,"Banana, raw",150,g
-1,2026-10-08,169414,"Flaxseed, ground",5,g
-1,2026-10-08,170563,"Sunflower seeds, dry roasted",30,g
-1,2026-10-08,168892,"Wheat germ, raw",60,g
-1,2026-10-08,1,Nutritional yeast,10,g
-1,2026-10-08,172470,"Peanut butter, smooth",25,g
-1,2026-10-08,170569,"Brazil nut, raw",5,g
-1,2026-10-08,171413,"Olive oil, extra virgin",10,g
-1,2026-10-08,173468,Iodized salt,4,g
-1,2026-10-08,173227,"Black tea, brewed",1000,g
-1,2026-10-08,173647,Tap water,1500,g
-1,2026-10-08,2,"Algae oil supplement, pill",1,dose
-1,2026-10-08,3,"Vitamin B12 supplement, pill",1,dose
-1,2026-10-08,4,"Vitamin D3 supplement (vegan), pill",1,dose
-1,2026-10-08,5,"Choline supplement, pill",1,dose
+menu,date,fdc_id,description,amount,unit,options,other
+1,2026-10-08,172475,"Tofu, firm, calcium set, raw",200,g,,
+1,2026-10-08,168147,"Seitan, cooked",50,g,,
+1,2026-10-08,172421,"Lentils, cooked",300,g,,
+1,2026-10-08,173904,"Oats, dry",125,g,,
+1,2026-10-08,168483,"Sweet potato, baked",100,g,,
+1,2026-10-08,169967,"Broccoli, cooked",200,g,,
+1,2026-10-08,168463,"Spinach, cooked",100,g,,
+1,2026-10-08,170108,"Red bell pepper, raw",100,g,,
+1,2026-10-08,173944,"Banana, raw",150,g,,
+1,2026-10-08,169414,"Flaxseed, ground",5,g,,
+1,2026-10-08,170563,"Sunflower seeds, dry roasted",30,g,,
+1,2026-10-08,168892,"Wheat germ, raw",60,g,,
+1,2026-10-08,1,Nutritional yeast,10,g,,
+1,2026-10-08,172470,"Peanut butter, smooth",25,g,,
+1,2026-10-08,170569,"Brazil nut, raw",5,g,,
+1,2026-10-08,171413,"Olive oil, extra virgin",10,g,,
+1,2026-10-08,173468,Iodized salt,4,g,,
+1,2026-10-08,173227,"Black tea, brewed",1000,g,,
+1,2026-10-08,173647,Tap water,1500,g,,
+1,2026-10-08,2,"Algae oil supplement, pill",1,dose,,
+1,2026-10-08,3,"Vitamin B12 supplement, pill",1,dose,,
+1,2026-10-08,4,"Vitamin D3 supplement (vegan), pill",1,dose,,
+1,2026-10-08,5,"Choline supplement, pill",1,dose,,

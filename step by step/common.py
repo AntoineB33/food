@@ -46,6 +46,8 @@ NONE = "none"
 
 FOOD_HEADER = ["fdc_id", "description", "unit"]
 MENU_HEADER = ["fdc_id", "description", "amount", "unit"]
+# options: the keys of the options (see MENU_OPTIONS) the menu was made with, other: its other wishes
+SUCCESSFUL_MENU_HEADER = ["menu", "date", *MENU_HEADER, "options", "other"]
 # How the LLM writes the menu, then the food each row of the menu is, then the ingredients and the nutrients
 MENU_ANSWER_HEADER = ["description", "amount", "unit"]
 FOOD_LIST_HEADER = ["description", "fdc_id", "fdc_description"]
@@ -66,16 +68,33 @@ MENU_NOTE = f"""Write the menu as a text easy to copy in a csv format with those
 {",".join(f'"{col}"' for col in MENU_ANSWER_HEADER)}
 {MENU_RULES}"""
 SEARCH_NOTE = """Use your web search tool to look into SR Legacy 2018 from fdc.nal.usda.gov (its food.csv file). Your memory of the IDs is not reliable: never write an fdc_id you did not read. A SR Legacy fdc_id is between 167512 and 175304, it is not a NDB number."""
-# The options of the menu asked at step 1.0: (key, question, what the prompt says when it is chosen)
+# The options of the menu asked at step 1.0: (key, question, what the prompt says when it is chosen, what a menu
+# made with it is said to be made)
 MENU_OPTIONS = [
-    ("location", "Tell the LLM where you live", "I live at {address}: choose foods that are easy to find in the shops there."),
-    ("cheap", "Must the menu be as cheap as possible", "The menu must be as cheap as possible."),
+    (
+        "location",
+        "Tell the LLM where you live",
+        "I live at {address}: choose foods that are easy to find in the shops there.",
+        "for where you live",
+    ),
+    (
+        "cheap",
+        "Must the menu be as cheap as possible",
+        "The menu must be as cheap as possible.",
+        "to be as cheap as possible",
+    ),
     (
         "eco",
         "Must the menu be as environmentally friendly as possible",
         "The menu must be as environmentally friendly as possible: low carbon and water footprint, foods that are local and in season when possible.",
+        "to be as environmentally friendly as possible",
     ),
-    ("quick", "Must the menu be as quick to prepare as possible", "The menu must be as quick to prepare as possible."),
+    (
+        "quick",
+        "Must the menu be as quick to prepare as possible",
+        "The menu must be as quick to prepare as possible.",
+        "to be as quick to prepare as possible",
+    ),
 ]
 MENU_OPTION_INTRO = "The menu must also follow these wishes, the daily nutrient needs coming first:"
 # For the prompts that correct a menu: the wishes alone are no reason to change it
@@ -140,7 +159,7 @@ def load_menu_options():
         return {}
 
 
-def _ask_yes_no(question, last):
+def ask_yes_no(question, last):
     while True:
         answer = input(f"  {question}? (y/n) [{'y' if last else 'n'}]: ").strip().lower()
         if answer in ("", "y", "n"):
@@ -152,8 +171,8 @@ def ask_menu_options():
     """Asks the user the options of the menu, the last answers being the default ones, and saves them."""
     options = load_menu_options()
     print("Options of the menu (Enter keeps the answer in brackets):")
-    for key, question, _ in MENU_OPTIONS:
-        options[key] = _ask_yes_no(question, bool(options.get(key)))
+    for key, question, _, _ in MENU_OPTIONS:
+        options[key] = ask_yes_no(question, bool(options.get(key)))
     # The address is only asked once: it is changed in the file
     while options["location"] and not options.get("address"):
         options["address"] = input("  Your address: ").strip()
@@ -163,16 +182,20 @@ def ask_menu_options():
     MENU_OPTION_FILE.write_text(json.dumps(options, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def chosen_menu_options():
+    """Returns the keys of the options chosen at step 1.0, and the other wishes."""
+    options = load_menu_options()
+    keys = [key for key, *_ in MENU_OPTIONS if options.get(key) and (key != "location" or options.get("address"))]
+    return keys, options.get("other", "")
+
+
 def menu_option_note(intro=MENU_OPTION_INTRO):
     """Returns the lines of a prompt that tell the wishes chosen at step 1.0, nothing when there is none."""
-    options = load_menu_options()
-    wishes = [
-        text.format(address=options.get("address", ""))
-        for key, _, text in MENU_OPTIONS
-        if options.get(key) and (key != "location" or options.get("address"))
-    ]
-    if options.get("other"):
-        wishes.append(options["other"])
+    keys, other = chosen_menu_options()
+    address = load_menu_options().get("address", "")
+    wishes = [text.format(address=address) for key, _, text, _ in MENU_OPTIONS if key in keys]
+    if other:
+        wishes.append(other)
     return "".join(f"{line}\n" for line in [intro, *(f"- {wish}" for wish in wishes)]) if wishes else ""
 
 
@@ -486,9 +509,10 @@ def save_menu(rows):
 def save_successful_menu(rows, date):
     """Adds the menu (see load_menu) to successful_menus.csv, the menus that satisfy the daily needs.
 
-    Each of its rows starts with the number of the menu and its date. A menu that is already there is not added again.
+    Each of its rows starts with the number of the menu and its date, and ends with the options chosen at step 1.0.
+    A menu that is already there is not added again.
     """
-    header = ["menu", "date", *MENU_HEADER]
+    header = SUCCESSFUL_MENU_HEADER
     existing = []
     if SUCCESSFUL_MENU_FILE.exists():
         found, existing = read_csv(SUCCESSFUL_MENU_FILE)
@@ -501,8 +525,24 @@ def save_successful_menu(rows, date):
         print(f"This menu is already the menu {same[0]} of '{SUCCESSFUL_MENU_FILE}'.")
         return
     number = max(menus, default=0) + 1
-    write_csv(SUCCESSFUL_MENU_FILE, header, existing + [[number, date, *row] for row in rows])
+    keys, other = chosen_menu_options()
+    write_csv(SUCCESSFUL_MENU_FILE, header, existing + [[number, date, *row, " ".join(keys), other] for row in rows])
     print(f"Saved as the menu {number} of '{SUCCESSFUL_MENU_FILE}'.")
+
+
+def load_successful_menus():
+    """Returns the menus of successful_menus.csv: {number: (date, keys of its options, other wishes, rows)}.
+
+    The rows are as in load_menu.
+    """
+    if not SUCCESSFUL_MENU_FILE.exists():
+        return {}
+    header, rows = read_csv(SUCCESSFUL_MENU_FILE)
+    check_header(header, SUCCESSFUL_MENU_HEADER, SUCCESSFUL_MENU_FILE)
+    menus = {}
+    for number, date, *food, keys, other in rows:
+        menus.setdefault(int(number), (date, keys.split(), other, []))[3].append(food)
+    return menus
 
 
 def menu_block(rows, foods=None):
