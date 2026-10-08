@@ -8,9 +8,8 @@ import runpy
 import sys
 from pathlib import Path
 
-import pyperclip
-
 import common
+import pyperclip
 from common import DB_DIR, AnswerError
 
 FOLDER = Path(__file__).resolve().parent
@@ -21,14 +20,14 @@ STATE_FILE = DB_DIR / "run_state.json"
 # that checks it, and is run again with each corrected csv the LLM writes
 PROMPT, CHECK = "prompt", "check"
 STEPS = [
-    ("1.0", "1.0_get_menu_prompt", PROMPT, "the csv of the menu"),
-    ("1.5", "1.5_copy_menu_then_check", CHECK, "the csv of the menu"),
+    ("1.0", "1.0_get_menu_prompt", PROMPT, "the whole answer (the menu as a text, then its csv)"),
+    ("1.5", "1.5_copy_menu_then_check", CHECK, "the whole answer (the menu as a text, then its csv)"),
     ("2.0", "2.0_get_food_prompt", PROMPT, "the csv of the foods"),
     ("2.5", "2.5_copy_foods_then_check", CHECK, "the csv of the foods"),
     ("3.0", "3.0_get_ingr_prompt", PROMPT, "the csv of the ingredients"),
     ("3.5", "3.5_copy_ingr_then_check", CHECK, "the csv of the ingredients"),
     ("4.0", "4.0_copy_nutr_if_given_then_check", CHECK, "the csv of the nutrients"),
-    ("5.0", "5.0_get_report", PROMPT, "the csv of the corrected menu"),
+    ("5.0", "5.0_get_report", PROMPT, "the whole answer (the corrected menu as a text, then its csv)"),
 ]
 NUMBERS = [number for number, _, _, _ in STEPS]
 REPORT = NUMBERS.index("5.0")
@@ -129,7 +128,7 @@ def ask_what_next(current, result, prompt):
     elif kind == CHECK:
         while True:
             answer = ask(
-                f"Paste the prompt in a new discussion. If the LLM writes a csv, copy it, then press Enter to run "
+                f"Paste the prompt in a new discussion. If the LLM writes a csv, copy {copied}, then press Enter to run "
                 f"{number} again. If it says it is correct, type y to go on with {NUMBERS[following]}",
                 prompt,
                 answers=("y",),
@@ -137,7 +136,7 @@ def ask_what_next(current, result, prompt):
             # Enter with the prompt still in the clipboard would give the script its own prompt to read
             if answer or pyperclip.paste().split() != (prompt or "").split():
                 break
-            print("The clipboard still holds the prompt: copy the csv of the LLM first, or type y if it says it is correct.")
+            print("The clipboard still holds the prompt: copy the answer of the LLM first, or type y if it says it is correct.")
         if not answer:
             following = current
     else:

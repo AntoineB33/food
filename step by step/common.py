@@ -30,7 +30,11 @@ FOOD_NUTRIENT_MANUAL_FILE = DB_DIR / "food_nutrient_manual.csv"
 FOOD_INGREDIENT_MANUAL_FILE = DB_DIR / "food_ingredient_manual.csv"
 NEW_FOOD_FILE = DB_DIR / "new_food.csv"
 MENU_FILE = DB_DIR / "menu.csv"
+# The menu as a text, meal by meal: menu.csv is written from it
+MENU_DESCRIPTION_FILE = DB_DIR / "menu_description.txt"
 SUCCESSFUL_MENU_FILE = DB_DIR / "successful_menus.csv"
+# The text of each menu of successful_menus.csv, in a file named after its number
+SUCCESSFUL_MENU_DESCRIPTION_DIR = DB_DIR / "successful_menu_descriptions"
 # The answers to the options of the menu, with the address of the user: not in git
 MENU_OPTION_FILE = DB_DIR / "menu_options.json"
 
@@ -64,9 +68,10 @@ ERROR_PROMPT = "Your csv output is incorrect, write the whole corrected csv. The
 MENU_RULES = f"""- One row per food eaten or drunk in the day, the water and the supplements too. A food is preferably a simple one, described in the state it is weighed in (raw, cooked, dry, ...), or else a dish.
 - amount: the grams of the food for the whole day, with {GRAM} as unit. Convert the cups, spoons and pieces to grams. Only for a supplement taken as a pill or a capsule: the number of doses, with {DOSE} as unit.
 - A food has only one row: sum its amounts when it is eaten several times in the day."""
-MENU_NOTE = f"""Write the menu as a text easy to copy in a csv format with those columns:
+MENU_NOTE = f"""First write the menu as a text: each meal of the day, with its foods and the grams of each one (with the cups, spoons or pieces too when it helps). Then write it again as a text easy to copy in a csv format with those columns:
 {",".join(f'"{col}"' for col in MENU_ANSWER_HEADER)}
-{MENU_RULES}"""
+{MENU_RULES}
+- The text and the csv must say the same: every food of the text is in the csv with the sum of its amounts, and the csv has no other food."""
 SEARCH_NOTE = """Use your web search tool to look into SR Legacy 2018 from fdc.nal.usda.gov (its food.csv file). Your memory of the IDs is not reliable: never write an fdc_id you did not read. A SR Legacy fdc_id is between 167512 and 175304, it is not a NDB number."""
 # The options of the menu asked at step 1.0: (key, question, what the prompt says when it is chosen, what a menu
 # made with it is said to be made)
@@ -510,6 +515,7 @@ def save_successful_menu(rows, date):
     """Adds the menu (see load_menu) to successful_menus.csv, the menus that satisfy the daily needs.
 
     Each of its rows starts with the number of the menu and its date, and ends with the options chosen at step 1.0.
+    Its text is saved too, in its own file.
     A menu that is already there is not added again.
     """
     header = SUCCESSFUL_MENU_HEADER
@@ -527,6 +533,10 @@ def save_successful_menu(rows, date):
     number = max(menus, default=0) + 1
     keys, other = chosen_menu_options()
     write_csv(SUCCESSFUL_MENU_FILE, header, existing + [[number, date, *row, " ".join(keys), other] for row in rows])
+    description = load_menu_description()
+    if description:
+        SUCCESSFUL_MENU_DESCRIPTION_DIR.mkdir(exist_ok=True)
+        (SUCCESSFUL_MENU_DESCRIPTION_DIR / f"{number}.txt").write_text(description, encoding="utf-8")
     print(f"Saved as the menu {number} of '{SUCCESSFUL_MENU_FILE}'.")
 
 
@@ -560,6 +570,50 @@ def menu_block(rows, foods=None):
     return file_block(
         f"{MENU_FILE.name} (amount: for the whole day, in the unit of the row)", rows_to_csv(header, table)
     )
+
+
+def split_menu_answer(text):
+    """Returns (text of the menu, csv of the menu) of an LLM answer: the text is all that is written before the csv."""
+    def is_header(line):
+        try:
+            cells = next(csv.reader([line]), [])
+        except csv.Error:
+            return False
+        return set(MENU_ANSWER_HEADER) <= {cell.strip().lower() for cell in cells}
+
+    lines = extract_csv(text).split("\n")
+    starts = [index for index, line in enumerate(lines) if is_header(line)]
+    if not starts:
+        raise ValueError(f"No csv with the columns {MENU_ANSWER_HEADER} found in the clipboard.")
+    # The csv may be in the same markdown block as the text, in its own one, or in none
+    csv_text = "\n".join(lines[starts[-1]:])
+    before = text[:text.rfind(csv_text)].split("\n")
+    description = "\n".join(line for line in before if not line.strip().startswith("```")).strip()
+    if not description:
+        raise ValueError(
+            "The menu as a text is missing before the csv (the whole answer must be copied, not only its csv)."
+        )
+    return description, csv_text
+
+
+def load_menu_description():
+    """Returns the menu as a text, empty for a menu that was saved without it."""
+    return MENU_DESCRIPTION_FILE.read_text(encoding="utf-8") if MENU_DESCRIPTION_FILE.exists() else ""
+
+
+def save_menu_description(description):
+    MENU_DESCRIPTION_FILE.write_text(description, encoding="utf-8")
+
+
+def menu_description_block(description):
+    """Formats the menu as a text for a prompt."""
+    return f"{MENU_DESCRIPTION_FILE.name} (the menu as a text, {MENU_FILE.name} was written from it)\n```\n{description}\n```"
+
+
+def load_successful_menu_description(number):
+    """Returns the text of a menu of successful_menus.csv, empty when it was saved without it."""
+    path = SUCCESSFUL_MENU_DESCRIPTION_DIR / f"{number}.txt"
+    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 def parse_menu_csv(text):

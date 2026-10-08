@@ -11,16 +11,18 @@ from common import (
     load_food_nutrients,
     load_identified_menu,
     load_menu,
+    load_menu_description,
     menu_block,
+    menu_description_block,
     menu_option_note,
     save_successful_menu,
     set_clipboard,
 )
 
-PROMPT = f"""The table above is my vegan menu for a day, fdc_description being the food of SR Legacy 2018 or of my own foods that each row was counted as. The report compares its total for the day with daily_need_table.csv.
+PROMPT = f"""Above is my vegan menu for a day, as a table and as the text it was written from when I have it, fdc_description being the food of SR Legacy 2018 or of my own foods that each row was counted as. The report compares its total for the day with daily_need_table.csv.
 Correct the menu to fix these lacks and excesses, without creating new ones.
 {menu_option_note(MENU_OPTION_KEEP_INTRO)}{MENU_NOTE}
-- Keep the description of the foods you keep unchanged, even when you change their amount."""
+- In the csv, keep the description of the foods you keep unchanged, even when you change their amount."""
 
 
 def build_report(daily_needs, daily_totals, nutrient_db):
@@ -86,5 +88,10 @@ if __name__ == "__main__":
         print("No nutrition lacks or excesses found. The menu satisfies the daily needs!")
         save_successful_menu(load_menu(), date.today().isoformat())
     else:
-        set_clipboard(f"{daily_need_block()}\n\n{menu_block(load_menu(), descriptions)}\n\n{report}\n\n{PROMPT}")
-        print("Paste it in a new discussion, copy the csv of the corrected menu, run 1.5_copy_menu_then_check to save it, then go on from 2.0_get_food_prompt.")
+        # A menu saved before the text was asked has none
+        description = load_menu_description()
+        text_block = f"{menu_description_block(description)}\n\n" if description else ""
+        set_clipboard(
+            f"{daily_need_block()}\n\n{text_block}{menu_block(load_menu(), descriptions)}\n\n{report}\n\n{PROMPT}"
+        )
+        print("Paste it in a new discussion, copy the whole answer (the corrected menu as a text, then its csv), run 1.5_copy_menu_then_check to save it, then go on from 2.0_get_food_prompt.")

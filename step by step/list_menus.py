@@ -1,5 +1,11 @@
 """Lists the menus of successful_menus.csv that were made with the options the user asks for (see README.md)."""
-from common import MENU_OPTIONS, SUCCESSFUL_MENU_FILE, ask_yes_no, load_successful_menus
+from common import (
+    MENU_OPTIONS,
+    SUCCESSFUL_MENU_FILE,
+    ask_yes_no,
+    load_successful_menu_description,
+    load_successful_menus,
+)
 
 MADE = {key: made for key, _, _, made in MENU_OPTIONS}
 
@@ -25,5 +31,9 @@ if __name__ == "__main__":
         made = ", ".join(MADE.get(key, key) for key in keys) or "without any option"
         print(f"\n{'=' * 20} Menu {number} ({date}) {'=' * 20}")
         print(f"Made {made}." + (f" Other wishes: {other}" if other else ""))
+        # A menu saved before the text was asked has none
+        text = load_successful_menu_description(number)
+        if text:
+            print(f"\n{text}\n\nTotal of the day:")
         for _, description, amount, unit in rows:
             print(f"{amount:>7} {unit:<5}{description}")
