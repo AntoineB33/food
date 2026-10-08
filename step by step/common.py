@@ -1,7 +1,7 @@
 """Shared helpers for the step by step scripts (see README.md).
 
 Every script reads the clipboard and/or the DB files, then copies the next prompt to the clipboard.
-Anything wrong raises, so the .bat pauses on the error.
+Anything wrong raises: 0_run_all shows the error and offers to run the script again.
 
 The menu is the list of the foods of a day. A food is a SR Legacy one (food.csv), or a manual one
 (food_manual.csv). A manual food that has just been added is a new food (new_food.csv): its nutrients
@@ -9,6 +9,7 @@ The menu is the list of the foods of a day. A food is a SR Legacy one (food.csv)
 """
 import csv
 import io
+import json
 import math
 import os
 import re
@@ -29,6 +30,9 @@ FOOD_NUTRIENT_MANUAL_FILE = DB_DIR / "food_nutrient_manual.csv"
 FOOD_INGREDIENT_MANUAL_FILE = DB_DIR / "food_ingredient_manual.csv"
 NEW_FOOD_FILE = DB_DIR / "new_food.csv"
 MENU_FILE = DB_DIR / "menu.csv"
+SUCCESSFUL_MENU_FILE = DB_DIR / "successful_menus.csv"
+# The answers to the options of the menu, with the address of the user: not in git
+MENU_OPTION_FILE = DB_DIR / "menu_options.json"
 
 # The amount of a food is in grams, its nutrients being given for 100g. A supplement taken as a pill has no
 # meaningful weight: its amount is a number of doses, its nutrients being given for one dose.
@@ -62,7 +66,21 @@ MENU_NOTE = f"""Write the menu as a text easy to copy in a csv format with those
 {",".join(f'"{col}"' for col in MENU_ANSWER_HEADER)}
 {MENU_RULES}"""
 SEARCH_NOTE = """Use your web search tool to look into SR Legacy 2018 from fdc.nal.usda.gov (its food.csv file). Your memory of the IDs is not reliable: never write an fdc_id you did not read. A SR Legacy fdc_id is between 167512 and 175304, it is not a NDB number."""
-NUTRIENT_ID_NOTE = """When a row of daily_need_table.csv has several IDs (e.g. "1278, 1272"), the need is the sum of those nutrients: each of them must still have its own row with its single nutrient_id and its own amount. Never write a combined ID or a summed amount in the csv."""
+# The options of the menu asked at step 1.0: (key, question, what the prompt says when it is chosen)
+MENU_OPTIONS = [
+    ("location", "Tell the LLM where you live", "I live at {address}: choose foods that are easy to find in the shops there."),
+    ("cheap", "Must the menu be as cheap as possible", "The menu must be as cheap as possible."),
+    (
+        "eco",
+        "Must the menu be as environmentally friendly as possible",
+        "The menu must be as environmentally friendly as possible: low carbon and water footprint, foods that are local and in season when possible.",
+    ),
+    ("quick", "Must the menu be as quick to prepare as possible", "The menu must be as quick to prepare as possible."),
+]
+MENU_OPTION_INTRO = "The menu must also follow these wishes, the daily nutrient needs coming first:"
+# For the prompts that correct a menu: the wishes alone are no reason to change it
+MENU_OPTION_KEEP_INTRO = "The menu was made with these wishes. Do not correct it only for them, but follow them in what you change:"
+NUTRIENT_ID_NOTE ="""When a row of daily_need_table.csv has several IDs (e.g. "1278, 1272"), the need is the sum of those nutrients: each of them must still have its own row with its single nutrient_id and its own amount. Never write a combined ID or a summed amount in the csv."""
 NUTRIENT_UNIT_NOTE = f"""The amounts are for 100g of the food when its unit is {GRAM}, for one dose when its unit is {DOSE}, in the unit of the nutrient."""
 
 
@@ -85,9 +103,19 @@ def get_clipboard():
     return text
 
 
+# The last prompt given, for 0_run_all to copy it again
+last_prompt = None
+
+
 def set_clipboard(text):
+    global last_prompt
+    last_prompt = text
     pyperclip.copy(text)
     print("The new prompt has been copied to your clipboard.")
+
+
+class AnswerError(ValueError):
+    """The csv of the clipboard is wrong: the prompt that tells the LLM about it is in the clipboard."""
 
 
 @contextmanager
@@ -98,7 +126,54 @@ def errors_to_llm(note=""):
     except ValueError as e:
         set_clipboard(f"{ERROR_PROMPT}\n{e}" + (f"\n\n{note}" if note else ""))
         print("It tells the LLM about the error below: paste it in the discussion that gave the csv.")
-        raise
+        raise AnswerError(str(e)) from None
+
+
+# ---------------------------------------------------------
+# Menu options
+# ---------------------------------------------------------
+def load_menu_options():
+    """Returns what was answered at step 1.0: whether each option is chosen, the address and the other wishes."""
+    try:
+        return json.loads(MENU_OPTION_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _ask_yes_no(question, last):
+    while True:
+        answer = input(f"  {question}? (y/n) [{'y' if last else 'n'}]: ").strip().lower()
+        if answer in ("", "y", "n"):
+            return last if not answer else answer == "y"
+        print("  Answer y or n.")
+
+
+def ask_menu_options():
+    """Asks the user the options of the menu, the last answers being the default ones, and saves them."""
+    options = load_menu_options()
+    print("Options of the menu (Enter keeps the answer in brackets):")
+    for key, question, _ in MENU_OPTIONS:
+        options[key] = _ask_yes_no(question, bool(options.get(key)))
+    # The address is only asked once: it is changed in the file
+    while options["location"] and not options.get("address"):
+        options["address"] = input("  Your address: ").strip()
+    last = options.get("other", "")
+    answer = input(f"  Anything else to ask for the menu? (text, - for nothing) [{last or '-'}]: ").strip()
+    options["other"] = "" if answer == "-" else answer or last
+    MENU_OPTION_FILE.write_text(json.dumps(options, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def menu_option_note(intro=MENU_OPTION_INTRO):
+    """Returns the lines of a prompt that tell the wishes chosen at step 1.0, nothing when there is none."""
+    options = load_menu_options()
+    wishes = [
+        text.format(address=options.get("address", ""))
+        for key, _, text in MENU_OPTIONS
+        if options.get(key) and (key != "location" or options.get("address"))
+    ]
+    if options.get("other"):
+        wishes.append(options["other"])
+    return "".join(f"{line}\n" for line in [intro, *(f"- {wish}" for wish in wishes)]) if wishes else ""
 
 
 # ---------------------------------------------------------
@@ -382,6 +457,12 @@ def load_menu():
     check_header(header, MENU_HEADER, MENU_FILE)
     if not rows:
         raise ValueError(f"{MENU_FILE.name} has no food: run step 1.5 first.")
+    # A manual food may have been removed since the menu was saved: its row is to identify again
+    foods = load_all_foods()
+    for row in rows:
+        if row[0].isdigit() and int(row[0]) not in foods:
+            print(f"The food {row[0]} of '{row[1]}' does not exist anymore: it is not identified anymore.")
+            row[0] = ""
     return rows
 
 
@@ -400,6 +481,28 @@ def save_menu(rows):
     """Writes the whole menu (see load_menu) to menu.csv."""
     write_csv(MENU_FILE, MENU_HEADER, rows)
     print(f"Successfully wrote the {len(rows)} foods of the menu to '{MENU_FILE}'.")
+
+
+def save_successful_menu(rows, date):
+    """Adds the menu (see load_menu) to successful_menus.csv, the menus that satisfy the daily needs.
+
+    Each of its rows starts with the number of the menu and its date. A menu that is already there is not added again.
+    """
+    header = ["menu", "date", *MENU_HEADER]
+    existing = []
+    if SUCCESSFUL_MENU_FILE.exists():
+        found, existing = read_csv(SUCCESSFUL_MENU_FILE)
+        check_header(found, header, SUCCESSFUL_MENU_FILE)
+    menus = {}
+    for row in existing:
+        menus.setdefault(int(row[0]), set()).add((row[2], row[4], row[5]))
+    same = [number for number, foods in menus.items() if foods == {(row[0], row[2], row[3]) for row in rows}]
+    if same:
+        print(f"This menu is already the menu {same[0]} of '{SUCCESSFUL_MENU_FILE}'.")
+        return
+    number = max(menus, default=0) + 1
+    write_csv(SUCCESSFUL_MENU_FILE, header, existing + [[number, date, *row] for row in rows])
+    print(f"Saved as the menu {number} of '{SUCCESSFUL_MENU_FILE}'.")
 
 
 def menu_block(rows, foods=None):

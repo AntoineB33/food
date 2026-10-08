@@ -2,6 +2,7 @@ from common import (
     MENU_ANSWER_HEADER,
     MENU_FILE,
     MENU_NOTE,
+    MENU_OPTION_KEEP_INTRO,
     MENU_RULES,
     answer_note,
     daily_need_block,
@@ -9,6 +10,7 @@ from common import (
     get_clipboard,
     load_menu,
     menu_block,
+    menu_option_note,
     normalize,
     parse_menu_csv,
     save_menu,
@@ -16,7 +18,7 @@ from common import (
 )
 
 CHECK_PROMPT = f"""The table above is a vegan menu for a day. Is it correct? Every food must be vegan, the amounts must be realistic to eat in a day, and the total of the day must be between min and max for each nutrient of daily_need_table.csv.
-{answer_note(MENU_ANSWER_HEADER)}
+{menu_option_note(MENU_OPTION_KEEP_INTRO)}{answer_note(MENU_ANSWER_HEADER)}
 {MENU_RULES}"""
 
 if __name__ == "__main__":

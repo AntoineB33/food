@@ -1,8 +1,10 @@
 from collections import defaultdict
+from datetime import date
 
 from common import (
     DOSE,
     MENU_NOTE,
+    MENU_OPTION_KEEP_INTRO,
     daily_need_block,
     load_all_foods,
     load_daily_needs,
@@ -10,12 +12,14 @@ from common import (
     load_identified_menu,
     load_menu,
     menu_block,
+    menu_option_note,
+    save_successful_menu,
     set_clipboard,
 )
 
 PROMPT = f"""The table above is my vegan menu for a day, fdc_description being the food of SR Legacy 2018 or of my own foods that each row was counted as. The report compares its total for the day with daily_need_table.csv.
 Correct the menu to fix these lacks and excesses, without creating new ones.
-{MENU_NOTE}
+{menu_option_note(MENU_OPTION_KEEP_INTRO)}{MENU_NOTE}
 - Keep the description of the foods you keep unchanged, even when you change their amount."""
 
 
@@ -80,6 +84,7 @@ if __name__ == "__main__":
     print("=" * 40)
     if satisfied:
         print("No nutrition lacks or excesses found. The menu satisfies the daily needs!")
+        save_successful_menu(load_menu(), date.today().isoformat())
     else:
         set_clipboard(f"{daily_need_block()}\n\n{menu_block(load_menu(), descriptions)}\n\n{report}\n\n{PROMPT}")
         print("Paste it in a new discussion, copy the csv of the corrected menu, run 1.5_copy_menu_then_check to save it, then go on from 2.0_get_food_prompt.")

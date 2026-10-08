@@ -1,23 +1,24 @@
 fdc_id,description,amount,unit
-,"Tofu, firm, calcium set, raw",200,g
-,"Seitan, cooked",200,g
+172475,"Tofu, firm, calcium set, raw",200,g
+168147,"Seitan, cooked",50,g
 172421,"Lentils, cooked",300,g
-,"Oats, dry",110,g
-,"Sweet potato, baked",200,g
-,"Broccoli, cooked",200,g
-,"Spinach, cooked",100,g
-,"Red bell pepper, raw",100,g
+173904,"Oats, dry",125,g
+168483,"Sweet potato, baked",100,g
+169967,"Broccoli, cooked",200,g
+168463,"Spinach, cooked",100,g
+170108,"Red bell pepper, raw",100,g
 173944,"Banana, raw",150,g
-,"Flaxseed, ground",5,g
-,"Sunflower seeds, dry roasted",30,g
-,"Wheat germ, raw",60,g
-11,Nutritional yeast,10,g
-,"Peanut butter, smooth",25,g
-,"Brazil nut, raw",5,g
-171413,"Olive oil, extra virgin",5,g
-,Iodized salt,4,g
-,"Black tea, brewed",1000,g
-,Tap water,1500,g
-,"Algae oil supplement, pill",1,dose
-,"Vitamin B12 supplement, pill",1,dose
-,"Vitamin D3 supplement (vegan), pill",1,dose
+169414,"Flaxseed, ground",5,g
+170563,"Sunflower seeds, dry roasted",30,g
+168892,"Wheat germ, raw",60,g
+1,Nutritional yeast,10,g
+172470,"Peanut butter, smooth",25,g
+170569,"Brazil nut, raw",5,g
+171413,"Olive oil, extra virgin",10,g
+173468,Iodized salt,4,g
+173227,"Black tea, brewed",1000,g
+173647,Tap water,1500,g
+2,"Algae oil supplement, pill",1,dose
+3,"Vitamin B12 supplement, pill",1,dose
+4,"Vitamin D3 supplement (vegan), pill",1,dose
+5,"Choline supplement, pill",1,dose

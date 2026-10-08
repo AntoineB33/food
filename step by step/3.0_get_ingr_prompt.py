@@ -54,7 +54,7 @@ if __name__ == "__main__":
     new_foods = [food for food in load_manual_foods() if food[0] in listed or food[0] not in with_nutrients]
     save_new_foods(new_foods)
     if not new_foods:
-        # Not an error, but exiting this way makes the .bat pause: the message must be read
+        # Not an error: exiting this way tells 0_run_all that the report is next
         sys.exit("Every food of the menu already has its nutrients: nothing to ask the LLM. Go on with 5.0_get_report.")
 
     set_clipboard(f"{food_manual_block()}\n\n{new_food_block(new_foods)}\n\n{PROMPT}")

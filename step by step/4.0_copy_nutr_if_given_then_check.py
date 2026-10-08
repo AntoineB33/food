@@ -79,7 +79,7 @@ def parse_nutrient_csv(text, new_ids):
 if __name__ == "__main__":
     new_foods = load_new_foods()
     if not new_foods:
-        # Not an error, but exiting this way makes the .bat pause: the message must be read
+        # Not an error: exiting this way tells 0_run_all that the report is next
         sys.exit(f"{NEW_FOOD_FILE.name} has no food: no nutrient to check. Go on with 5.0_get_report.")
     new_ids = [fdc_id for fdc_id, _, _ in new_foods]
     ingredients = load_ingredients()

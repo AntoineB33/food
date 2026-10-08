@@ -1,7 +1,6 @@
 fdc_id,description,unit
-6,Algae Oil,dose
-9,Creatine monohydrate,g
-10,Pea and rice protein blend,g
-11,Nutritional yeast,g
-1,pea protein isolate,g
-2,"seitan, prepared",g
+1,Nutritional yeast,g
+2,"Algae oil supplement, pill",dose
+3,"Vitamin B12 supplement, pill",dose
+4,"Vitamin D3 supplement (vegan), pill",dose
+5,"Choline supplement, pill",dose
