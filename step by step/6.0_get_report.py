@@ -1,10 +1,7 @@
-import json
 from collections import defaultdict
 from datetime import date
 
-import common
 from common import (
-    DB_DIR,
     DEPENDENCE_NOTE,
     DOSE,
     MENU_NOTE,
@@ -39,34 +36,32 @@ from common import (
     set_clipboard,
 )
 
-# The corrections already asked for the menu, so that the next one is offered when a correction changed nothing
-CORRECTION_FILE = DB_DIR / "correction_state.json"
-# What a prompt of this step asks to correct, from the cheapest to the most expensive: wrong numbers of the
-# products, products that suit the menu better, or the menu itself, which has to be identified again
-VALUES, PRODUCTS, MENU = "values", "products", "menu"
-CORRECTIONS = {
-    VALUES: "the numbers of the products",
-    PRODUCTS: "other products, that suit this menu better",
-    MENU: "the menu itself",
-}
-
 INTRO = """Above is my vegan menu for a day, fdc_description being the generic food of SR Legacy 2018 or of my own foods that each row is, and product the real product I buy for it, when I have one. A food is counted with the nutrients given for its product, or else with those of its generic food. The report compares the total of the day with daily_need_table.csv."""
 
-VALUES_PROMPT = f"""{INTRO}
-product_values.csv lists the numbers behind these lacks and excesses that I did not read myself on the product: one of them may be wrong. Check each of them with your web search tool, on the page of the product.
-If they are all right, only answer that they are right, without any csv. If not, write the rows to change, {PRODUCT_NUTRIENT_NOTE}"""
-
-PRODUCTS_PROMPT = f"""{INTRO}
-Without changing the foods of the menu nor their amounts, find other real products for some of them that would fix these lacks and excesses, without creating new ones: a product that is fortified or not, set with calcium or not, a supplement with another dose, ...
-{DEPENDENCE_NOTE} It only has the nutrients in lack or in excess.
-{menu_option_note("The menu was made with these wishes, follow them in the products you choose:")}Use your web search tool for the products, their prices and the shops. Never invent a product, a price or what a label says.
-If no product can fix them, only answer so, without any csv. If some can, write them.
-{PRODUCT_NOTE}"""
-
-MENU_PROMPT = f"""{INTRO}
-Correct the menu to fix these lacks and excesses, without creating new ones.
+# The corrections the LLM chooses from, from the cheapest for the user to the most expensive: wrong numbers of the
+# products, products that suit the menu better, or the menu itself, which has to be identified again.
+# The first one is only told when some numbers behind the lacks and excesses were not read on the product
+VALUES_CORRECTION = f"""Check the numbers of product_values.csv with your web search tool, on the page of each product: they are the numbers behind these lacks and excesses that I did not read myself on the product, and one of them may be wrong. If some are wrong, write only the rows to change, {PRODUCT_NUTRIENT_NOTE}"""
+PRODUCTS_CORRECTION = f"""Without changing the foods of the menu nor their amounts, find other real products for some of them that fix these lacks and excesses without creating new ones: a product that is fortified or not, set with calcium or not, a supplement with another dose, ... Use your web search tool for the products, their prices and the shops. Never invent a product, a price or what a label says. If some products do, write only them.
+{menu_option_note("The menu was made with these wishes, follow them in the products you choose:")}{PRODUCT_NOTE}"""
+MENU_CORRECTION = f"""Correct the menu itself to fix these lacks and excesses, without creating new ones.
 {menu_option_note(MENU_OPTION_KEEP_INTRO)}{MENU_NOTE}
 - In the csv, keep the description of the foods you keep unchanged, even when you change their amount."""
+
+
+def correction_prompt(with_values):
+    """Returns the prompt that makes the LLM correct what is wrong, with the numbers to check when there are some."""
+    corrections = [PRODUCTS_CORRECTION, MENU_CORRECTION]
+    if with_values:
+        corrections.insert(0, VALUES_CORRECTION)
+    return (
+        f"{INTRO}\n{DEPENDENCE_NOTE} It only has the nutrients in lack or in excess.\n"
+        f"Fix these lacks and excesses with the first of the {len(corrections)} corrections below that can fix them. "
+        "Go on to the next one only when the one before cannot: a correction of the menu costs me much more than a "
+        "correction of the products. Start your answer by saying in one sentence which correction you make and why, "
+        "then write what this correction asks for, and nothing of the other ones.\n\n"
+        + "\n\n".join(f"Correction {number}. {text}" for number, text in enumerate(corrections, start=1))
+    )
 
 
 def build_report(menu, nutrient_db, daily_needs):
@@ -147,38 +142,6 @@ def unread_values(rows, choices, sources, failing):
     return values
 
 
-def ask_correction(rows, values):
-    """Asks the user what to correct, offering the cheapest correction that was not asked for this menu yet."""
-    # The corrections asked before only count while the menu is the same
-    menu_key = json.dumps([[row[0], row[2], row[3]] for row in rows])
-    try:
-        state = json.loads(CORRECTION_FILE.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        state = {}
-    asked = state.get("asked", []) if state.get("menu") == menu_key else []
-
-    possible = [kind for kind in CORRECTIONS if kind != VALUES or values]
-    offered = next((kind for kind in possible if kind not in asked), MENU)
-    print("\nWhat must the LLM correct?")
-    for number, (kind, what) in enumerate(CORRECTIONS.items(), start=1):
-        note = ""
-        if kind == VALUES:
-            note = (
-                f": {len(values)} of the numbers behind the lacks and excesses were not read on site" if values
-                else ": not possible, no number of a product is behind the lacks and excesses, or they were all read on site"
-            )
-        print(f"  {number}. {what}{note}{' (already asked for this menu)' if kind in asked else ''}")
-    kinds = list(CORRECTIONS)
-    while True:
-        answer = input(f"  Your choice [{kinds.index(offered) + 1}]: ").strip()
-        kind = offered if not answer else kinds[int(answer) - 1] if answer in ("1", "2", "3") else None
-        if kind in possible:
-            break
-        print("  Answer one of the numbers that are possible.")
-    CORRECTION_FILE.write_text(json.dumps({"menu": menu_key, "asked": [*asked, kind]}), encoding="utf-8")
-    return kind
-
-
 if __name__ == "__main__":
     # 1. The menu identified at step 2.5, whose new foods got their nutrients at steps 3.5 and 4.0. A food is
     # counted as the product chosen for it at step 5.5, or else as its generic food
@@ -219,27 +182,24 @@ if __name__ == "__main__":
         print("No nutrition lacks or excesses found. The menu satisfies the daily needs!")
         save_successful_menu(rows, date.today().isoformat(), choices)
     else:
-        # 4. What to correct: the user chooses, the cheapest correction that was not asked yet being offered
+        # 4. The LLM corrects what is wrong, among the numbers of the products, the products and the menu
         values = unread_values(rows, choices, sources, failing)
-        common.last_correction = kind = ask_correction(rows, values)
-        blocks = [daily_need_block(), menu_block(rows, descriptions, choices), report]
-        if kind == VALUES:
+        blocks = [daily_need_block()]
+        # A menu saved before the text was asked has none
+        description = load_menu_description()
+        if description:
+            blocks.append(menu_description_block(description))
+        blocks += [menu_block(rows, descriptions, choices), report]
+        if values:
+            print(f"{len(values)} of the numbers behind the lacks and excesses were not read on site: the prompt asks to check them first.")
             blocks.append(file_block(
                 "product_values.csv (the numbers to check)",
                 rows_to_csv(["product_id", "product", "nutrient_id", "name", "unit", "amount", "source"], values),
             ))
-            blocks.append(VALUES_PROMPT)
-            print("Paste it in a new discussion. If the LLM writes a csv, copy its whole answer, then run 5.5_copy_products and this step again.")
-            print("If it says the numbers are right, run this step again to ask for another correction.")
-        elif kind == PRODUCTS:
-            blocks += [product_block(set(fdc_ids)), dependence_block(rows, nutrient_db, failing), PRODUCTS_PROMPT]
-            print("Paste it in a new discussion. If the LLM writes csv tables, copy its whole answer, then run 5.5_copy_products and this step again.")
-            print("If it says no product can fix them, run this step again to ask for another correction.")
-        else:
-            # A menu saved before the text was asked has none
-            description = load_menu_description()
-            if description:
-                blocks.insert(1, menu_description_block(description))
-            blocks.append(MENU_PROMPT)
-            print("Paste it in a new discussion, copy the whole answer (the corrected menu as a text, then its csv), run 1.5_copy_menu_then_check to save it, then go on from 2.0_get_food_prompt.")
+        if choices:
+            blocks.append(product_block(set(fdc_ids)))
+        blocks += [dependence_block(rows, nutrient_db, failing), correction_prompt(bool(values))]
         set_clipboard("\n\n".join(blocks))
+        print("Paste it in a new discussion, and copy the whole answer.")
+        print("If the LLM corrected products, run 5.5_copy_products, then this step again.")
+        print("If it corrected the menu, run 1.5_copy_menu_then_check to save it, then go on from 2.0_get_food_prompt.")

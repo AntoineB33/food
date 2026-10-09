@@ -36,8 +36,6 @@ NUMBERS = [number for number, _, _, _ in STEPS]
 PRODUCT_PROMPT, PRODUCTS, REPORT = NUMBERS.index("5.0"), NUMBERS.index("5.5"), NUMBERS.index("6.0")
 # Where the corrected menu of the report goes
 AFTER_REPORT = NUMBERS.index("1.5")
-# What the prompt of the report asks to correct when it is not the menu (see 6.0_get_report): its answer goes to PRODUCTS
-MENU_CORRECTION = "menu"
 
 # How a script ended: its prompt is in the clipboard, the prompt that tells the LLM about the error of its csv is,
 # the script says there is nothing to ask the LLM and that the next part is next, or it failed for another reason
@@ -45,18 +43,17 @@ OK, ANSWER_ERROR, NOTHING_TO_DO, ERROR = "ok", "answer error", "nothing to do", 
 
 
 def load_state():
-    """Returns (step, how it ended, prompt, correction asked by the report) of the script that was run last, or None."""
+    """Returns (step, how it ended, prompt) of the script that was run last, or None."""
     try:
         state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-        return NUMBERS.index(state["step"]), state["result"], state["prompt"], state.get("correction")
+        return NUMBERS.index(state["step"]), state["result"], state["prompt"]
     except (OSError, ValueError, KeyError):
         return None
 
 
-def save_state(current, result, prompt, correction):
+def save_state(current, result, prompt):
     STATE_FILE.write_text(
-        json.dumps({"step": NUMBERS[current], "result": result, "prompt": prompt, "correction": correction}),
-        encoding="utf-8",
+        json.dumps({"step": NUMBERS[current], "result": result, "prompt": prompt}), encoding="utf-8"
     )
 
 
@@ -110,10 +107,9 @@ def ask(question, prompt=None, answers=()):
 
 
 def run(name):
-    """Runs a script, and returns how it ended, the prompt it gave, None without any, and what the prompt of the
-    report asks to correct."""
+    """Runs a script, and returns how it ended and the prompt it gave, None without any."""
     print(f"\n{'=' * 20} {name} {'=' * 20}")
-    common.last_prompt = common.last_correction = None
+    common.last_prompt = None
     try:
         runpy.run_path(str(FOLDER / f"{name}.py"), run_name="__main__")
         result = OK
@@ -127,10 +123,10 @@ def run(name):
         # The way a script says there is nothing to ask the LLM
         print(f"\n{e.code}")
         result = NOTHING_TO_DO
-    return result, common.last_prompt, common.last_correction
+    return result, common.last_prompt
 
 
-def ask_what_next(current, result, prompt, correction=None):
+def ask_what_next(current, result, prompt):
     """Says what to do with the LLM after a script, waits, and returns the script to run then."""
     number, _, kind, copied = STEPS[current]
     following = current + 1
@@ -164,27 +160,19 @@ def ask_what_next(current, result, prompt, correction=None):
         # The report gives no prompt when the menu satisfies the daily needs
         following = 0
         answer = ask(f"It is finished: q to quit, or press Enter to start a new menu at {NUMBERS[following]}")
-    elif current == REPORT and correction != MENU_CORRECTION:
+    elif current == REPORT:
+        # The LLM corrects the products or the menu: what its answer holds tells which script reads it
         while True:
             answer = ask(
-                f"Paste the prompt in a new discussion. If the LLM writes a csv, copy its whole answer, then press Enter "
-                f"to run {NUMBERS[PRODUCTS]}. If it says there is nothing to change, type y to run {number} again, "
-                "which offers another correction",
+                f"Paste the prompt in a new discussion, copy the whole answer of the LLM, then press Enter: it runs "
+                f"{NUMBERS[PRODUCTS]} when the LLM corrected products, {NUMBERS[AFTER_REPORT]} when it corrected the menu",
                 prompt,
-                answers=("y",),
             )
-            # Enter with the prompt still in the clipboard would give the script its own prompt to read
-            if answer or not holds_prompt(prompt):
+            answered = None if holds_prompt(prompt) else common.answer_kind(pyperclip.paste())
+            if answer or answered:
                 break
-            print("The clipboard still holds the prompt: copy the answer of the LLM first, or type y if it says there is nothing to change.")
-        following = current if answer == "y" else PRODUCTS
-    elif current == REPORT:
-        following = AFTER_REPORT
-        answer = ask(
-            f"Paste the prompt in a new discussion, copy {copied} the LLM writes, "
-            f"then press Enter to run {NUMBERS[following]}",
-            prompt,
-        )
+            print("The clipboard holds neither the csv of a menu nor the csv of products: copy the whole answer of the LLM first.")
+        following = AFTER_REPORT if answered == common.MENU_ANSWER else PRODUCTS
     elif kind == CHECK:
         while True:
             answer = ask(

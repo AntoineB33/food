@@ -1,0 +1,27 @@
+product_id,fdc_id,description,shop,price,package_amount,eco,source,date
+1,169705,Terres et Céréales Bio Flocons D'Avoine Bio,Auchan Palaiseau,2.5,500,A,estimate,2026-10-10
+2,172456,Alpro Boisson Soja Nature Calcium,Auchan Palaiseau,1.85,1000,B,estimate,2026-10-10
+3,170187,Auchan Cerneaux de Noix,Auchan Palaiseau,3.5,125,C,estimate,2026-10-10
+4,10,Thé noir Lipton Yellow Label,Auchan Palaiseau,2.9,100,C,estimate,2026-10-10
+5,175103,Eau du robinet,Palaiseau,0.01,1000,A,estimate,2026-10-10
+6,7,Deva Vegan Multivitamin,Amazon.fr,19,90,,estimate,2026-10-10
+7,2,Omega 3 d'algues Vegan,Un Monde Vegan (website),16.99,60,,https://proteines-vegetales.fr/produit/veg-1/,2026-10-09
+8,172475,Bjorg Tofu nature veggie bio,Auchan Palaiseau,2.8,250,A,estimate,2026-10-10
+9,170026,Pommes de terre,Auchan Palaiseau,2.5,1000,A,estimate,2026-10-09
+10,170379,Brocoli,Auchan Palaiseau,1.99,500,A,estimate,2026-10-09
+11,171413,Auchan Huile d'Olive vierge extra origine Espagne,Auchan Palaiseau,7.5,750,C,estimate,2026-10-10
+12,173468,Sel Fin Iodé CEREBOS,Auchan Palaiseau,1.2,500,,estimate,2026-10-10
+13,174284,Auchan Lentilles corail,Auchan Palaiseau,2.2,500,A,estimate,2026-10-10
+14,174276,MyProtein Isolat de protéine de soja (Chocolat onctueux),MyProtein.fr,24.99,1000,,estimate,2026-10-10
+15,170393,Carottes,Auchan Palaiseau,1.5,1000,A,estimate,2026-10-09
+16,170569,Noix du Brésil,Auchan Palaiseau,15,250,,estimate,2026-10-09
+17,4,Natura Force Vitamine D3 K2 végétale (gélules),Natura Force (en ligne),22.9,90,,estimate,2026-10-10
+18,171426,SFB Lecithine De Soja Granulés,Amazon.fr,15,250,,estimate,2026-10-10
+19,169756,Auchan Riz long grain incollable 10 min,Auchan Palaiseau,1.6,1000,B,estimate,2026-10-10
+20,2,Nutravita Omega 3 d'algues Vegan,Amazon.fr,21.9,60,,estimate,2026-10-10
+21,5,ZeinPharma Choline 600 mg,VitalAbo France (vitalabo.fr),12.95,60,,https://www.vitalabo.fr/zeinpharma/choline-600-mg,2026-10-10
+22,170026,Pommes de terre vrac,Auchan Palaiseau,1.5,1000,A,estimate,2026-10-10
+23,170379,Brocoli vrac,Auchan Palaiseau,2,500,A,estimate,2026-10-10
+24,170393,Carottes vrac,Auchan Palaiseau,1.5,1000,A,estimate,2026-10-10
+25,170569,Noix du Brésil (vrac ou sachet),Auchan Palaiseau,4,200,C,estimate,2026-10-10
+26,7,"Deva Vegan Multivitamin & Mineral Supplement, Iron Free",iHerb,12.34,90,,https://fr.iherb.com/pr/deva-vegan-multivitamin-mineral-supplement-with-greens-iron-free-90-coated-tablets/18166,2026-10-10

@@ -72,6 +72,8 @@ MENU_PRODUCT_HEADER = ["fdc_id", "product_id"]
 PRODUCT_ANSWER_HEADER = ["fdc_id", "product", "shop", "price", "package_amount", "eco", "source"]
 PRODUCT_NUTRIENT_ANSWER_HEADER = ["product", "nutrient_id", "amount", "source"]
 ON_SITE = "on site"
+# What an answer to the prompt of the report corrects (see answer_kind)
+MENU_ANSWER, PRODUCT_ANSWER = "menu", "products"
 ECO_LEVELS = "ABCDE"
 # The menu counts on a food for a nutrient when it brings at least this share of its total of the day: with less,
 # the product bought changes little
@@ -171,8 +173,6 @@ def get_clipboard():
 
 # The last prompt given, for 0_run_all to copy it again
 last_prompt = None
-# What the prompt of the report asks to correct, for 0_run_all to know which script reads its answer
-last_correction = None
 
 
 def set_clipboard(text):
@@ -1179,6 +1179,15 @@ def extract_table(text, required):
             current = [line]
             tables.append(current)
     return "\n".join(tables[-1]) if tables else None
+
+
+def answer_kind(text):
+    """Tells what an LLM answer to the report corrects: MENU_ANSWER or PRODUCT_ANSWER, None when it holds no csv of them."""
+    if extract_table(text, MENU_ANSWER_HEADER) is not None:
+        return MENU_ANSWER
+    if any(extract_table(text, header) is not None for header in (PRODUCT_ANSWER_HEADER, PRODUCT_NUTRIENT_ANSWER_HEADER)):
+        return PRODUCT_ANSWER
+    return None
 
 
 def parse_product_answer(text, fdc_ids):

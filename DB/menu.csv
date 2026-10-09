@@ -1,17 +1,21 @@
 fdc_id,description,amount,unit
-169705,Oats (dry),100,g
-172456,Soy milk (fortified),400,g
-170187,Walnuts (raw),20,g
-10,Black tea (dry),10,g
-175103,Water,3200,g
-7,Complete vegan multivitamin and mineral supplement (pill),1,dose
+169705,Oats (dry),130,g
+172456,Soy milk (fortified),630,g
+170187,Walnuts (raw),5,g
+10,Black tea (dry),4,g
+175103,Water,2500,g
+7,"Complete vegan multivitamin and mineral supplement, iron-free (pill)",1,dose
 2,Algae oil supplement (capsule),1,dose
-172475,"Tofu (firm, raw)",250,g
-170026,Potato (raw),600,g
-170379,Broccoli (raw),150,g
+4,Vitamin D supplement (pill),1,dose
+5,Choline supplement (pill),1,dose
+172475,"Tofu (firm, raw)",150,g
+169756,White rice (dry),120,g
+170026,Potato (raw),100,g
+170379,Broccoli (raw),200,g
 171413,Olive oil,25,g
-173468,Iodized salt,5,g
-174284,Red lentils (dry),100,g
+173468,Iodized salt,4,g
+174284,Red lentils (dry),80,g
 174276,Soy protein isolate (powder),60,g
 170393,Carrot (raw),150,g
 170569,Brazil nut (raw),5,g
+171426,Soy lecithin (granules),5,g
