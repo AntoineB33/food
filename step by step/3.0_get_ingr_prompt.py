@@ -54,8 +54,8 @@ if __name__ == "__main__":
     new_foods = [food for food in load_manual_foods() if food[0] in listed or food[0] not in with_nutrients]
     save_new_foods(new_foods)
     if not new_foods:
-        # Not an error: exiting this way tells 0_run_all that the report is next
-        sys.exit("Every food of the menu already has its nutrients: nothing to ask the LLM. Go on with 5.0_get_report.")
+        # Not an error: exiting this way tells 0_run_all that the products are next
+        sys.exit("Every food of the menu already has its nutrients: nothing to ask the LLM. Go on with 5.0_get_product_prompt.")
 
     set_clipboard(f"{food_manual_block()}\n\n{new_food_block(new_foods)}\n\n{PROMPT}")
     print("Paste it in a new discussion, copy the csv of the ingredients, then run 3.5_copy_ingr_then_check.")

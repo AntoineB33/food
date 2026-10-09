@@ -35,6 +35,11 @@ MENU_DESCRIPTION_FILE = DB_DIR / "menu_description.txt"
 SUCCESSFUL_MENU_FILE = DB_DIR / "successful_menus.csv"
 # The text of each menu of successful_menus.csv, in a file named after its number
 SUCCESSFUL_MENU_DESCRIPTION_DIR = DB_DIR / "successful_menu_descriptions"
+# The real products the user buys, each one being a food of food.csv or of food_manual.csv, the nutrients their
+# label gives, and the product each food of the menu is counted as
+PRODUCT_FILE = DB_DIR / "product.csv"
+PRODUCT_NUTRIENT_FILE = DB_DIR / "product_nutrient.csv"
+MENU_PRODUCT_FILE = DB_DIR / "menu_product.csv"
 # The answers to the options of the menu, with the address of the user: not in git
 MENU_OPTION_FILE = DB_DIR / "menu_options.json"
 
@@ -50,13 +55,31 @@ NONE = "none"
 
 FOOD_HEADER = ["fdc_id", "description", "unit"]
 MENU_HEADER = ["fdc_id", "description", "amount", "unit"]
-# options: the keys of the options (see MENU_OPTIONS) the menu was made with, other: its other wishes
-SUCCESSFUL_MENU_HEADER = ["menu", "date", *MENU_HEADER, "options", "other"]
+# options: the keys of the options (see MENU_OPTIONS) the menu was made with, other: its other wishes,
+# product_id: the product the food was counted as, empty when it was counted as the generic food
+SUCCESSFUL_MENU_HEADER = ["menu", "date", *MENU_HEADER, "options", "other", "product_id"]
 # How the LLM writes the menu, then the food each row of the menu is, then the ingredients and the nutrients
 MENU_ANSWER_HEADER = ["description", "amount", "unit"]
 FOOD_LIST_HEADER = ["description", "fdc_id", "fdc_description"]
 INGREDIENT_HEADER = ["fdc_id", "ingredient_fdc_id", "ingredient_description", "quantity"]
 NUTRIENT_ANSWER_HEADER = ["fdc_id", "nutrient_id", "amount"]
+# price: in euros for package_amount, which is in the unit of the food. eco: from A (the best) to E.
+# source: where the information comes from, ON_SITE when the user read it on the product
+PRODUCT_HEADER = ["product_id", "fdc_id", "description", "shop", "price", "package_amount", "eco", "source", "date"]
+PRODUCT_NUTRIENT_HEADER = ["product_id", "nutrient_id", "amount", "source"]
+MENU_PRODUCT_HEADER = ["fdc_id", "product_id"]
+# How the LLM writes the products, then their nutrients
+PRODUCT_ANSWER_HEADER = ["fdc_id", "product", "shop", "price", "package_amount", "eco", "source"]
+PRODUCT_NUTRIENT_ANSWER_HEADER = ["product", "nutrient_id", "amount", "source"]
+ON_SITE = "on site"
+ECO_LEVELS = "ABCDE"
+# The menu counts on a food for a nutrient when it brings at least this share of its total of the day: with less,
+# the product bought changes little
+SHARE = 0.2
+DEPENDENCE_HEADER = [
+    "fdc_id", "description", "nutrient_id", "nutrient", "unit",
+    "amount_in_food", "amount_in_day", "total_of_the_day", "share_percent", "needed",
+]
 FOOD_NUTRIENT_HEADER = [
     "id", "fdc_id", "nutrient_id", "amount", "data_points",
     "derivation_id", "min", "max", "median",
@@ -106,6 +129,25 @@ MENU_OPTION_INTRO = "The menu must also follow these wishes, the daily nutrient 
 MENU_OPTION_KEEP_INTRO = "The menu was made with these wishes. Do not correct it only for them, but follow them in what you change:"
 NUTRIENT_ID_NOTE ="""When a row of daily_need_table.csv has several IDs (e.g. "1278, 1272"), the need is the sum of those nutrients: each of them must still have its own row with its single nutrient_id and its own amount. Never write a combined ID or a summed amount in the csv."""
 NUTRIENT_UNIT_NOTE = f"""The amounts are for 100g of the food when its unit is {GRAM}, for one dose when its unit is {DOSE}, in the unit of the nutrient."""
+SOURCE_NOTE = f"""the website you read it on, or estimate when it is your own knowledge. {ON_SITE} is only for what I told you I read myself on the product."""
+DEPENDENCE_NOTE = f"""menu_dependence.csv tells the nutrients the menu counts on each food for: the ones it brings at least {SHARE:.0%} of the total of the day of. amount_in_food: what the food is counted with, for 100g of it, or for one dose when its unit is {DOSE}. amount_in_day: what it brings with its amount of the menu. needed: yes when the day would be under its minimum without this food."""
+PRODUCT_NUTRIENT_NOTE = f"""as a text easy to copy in a csv format with those columns:
+{",".join(f'"{col}"' for col in PRODUCT_NUTRIENT_ANSWER_HEADER)}
+- product: the product_id of a product of product.csv, or the description of a product of the first table.
+- nutrient_id, amount: a nutrient of daily_need_table.csv, and its amount in the product. {NUTRIENT_UNIT_NOTE} The sodium of a product is the salt of its label divided by 2.5.
+- Only the nutrients that the label or the page of the product gives: the others are taken from its generic food.
+- source: where the number comes from: {SOURCE_NOTE}
+- {NUTRIENT_ID_NOTE}"""
+PRODUCT_NOTE = f"""Write two tables, each one as a text easy to copy in a csv format. The first one is the products, with those columns:
+{",".join(f'"{col}"' for col in PRODUCT_ANSWER_HEADER)}
+- fdc_id: the food of the menu that the product is.
+- product: its brand and its name, as specific as it is useful to be and not more: the name is enough for a fresh vegetable, but the kind or the brand must be told when the nutrients the menu counts on depend on it.
+- shop: where and how to buy it: the shop and its town, or the website.
+- price: in euros, for the package. package_amount: what the package holds, in grams when the unit of the food is {GRAM}, in doses when it is {DOSE}. Both empty when you do not know them.
+- eco: how environmentally friendly the product is, from {ECO_LEVELS[0]} (the best) to {ECO_LEVELS[-1]}, empty when you cannot tell.
+- source: where the information comes from: {SOURCE_NOTE}
+The second one is the nutrients of the products, {PRODUCT_NUTRIENT_NOTE}
+- A product whose label gives nothing has no row in this second table."""
 
 
 def answer_note(header):
@@ -129,6 +171,8 @@ def get_clipboard():
 
 # The last prompt given, for 0_run_all to copy it again
 last_prompt = None
+# What the prompt of the report asks to correct, for 0_run_all to know which script reads its answer
+last_correction = None
 
 
 def set_clipboard(text):
@@ -511,28 +555,38 @@ def save_menu(rows):
     print(f"Successfully wrote the {len(rows)} foods of the menu to '{MENU_FILE}'.")
 
 
-def save_successful_menu(rows, date):
-    """Adds the menu (see load_menu) to successful_menus.csv, the menus that satisfy the daily needs.
-
-    Each of its rows starts with the number of the menu and its date, and ends with the options chosen at step 1.0.
-    Its text is saved too, in its own file.
-    A menu that is already there is not added again.
-    """
-    header = SUCCESSFUL_MENU_HEADER
+def _read_successful_menus(rows, choices):
+    """Returns the data rows of successful_menus.csv, and the numbers of its menus that are the menu (see load_menu)
+    with the same products ({fdc_id: product_id})."""
     existing = []
     if SUCCESSFUL_MENU_FILE.exists():
         found, existing = read_csv(SUCCESSFUL_MENU_FILE)
-        check_header(found, header, SUCCESSFUL_MENU_FILE)
+        check_header(found, SUCCESSFUL_MENU_HEADER, SUCCESSFUL_MENU_FILE)
     menus = {}
     for row in existing:
-        menus.setdefault(int(row[0]), set()).add((row[2], row[4], row[5]))
-    same = [number for number, foods in menus.items() if foods == {(row[0], row[2], row[3]) for row in rows}]
+        menus.setdefault(int(row[0]), set()).add((row[2], row[4], row[5], row[-1]))
+    wanted = {(row[0], row[2], row[3], str(choices.get(int(row[0]), ""))) for row in rows}
+    return existing, [number for number, foods in menus.items() if foods == wanted]
+
+
+def save_successful_menu(rows, date, choices):
+    """Adds the menu (see load_menu) to successful_menus.csv, the menus that satisfy the daily needs.
+
+    Each of its rows starts with the number of the menu and its date, and ends with the options chosen at step 1.0
+    and the product the food was counted as (choices: {fdc_id: product_id}). Its text is saved too, in its own file.
+    A menu that is already there with the same products is not added again.
+    """
+    existing, same = _read_successful_menus(rows, choices)
     if same:
         print(f"This menu is already the menu {same[0]} of '{SUCCESSFUL_MENU_FILE}'.")
         return
-    number = max(menus, default=0) + 1
+    number = max((int(row[0]) for row in existing), default=0) + 1
     keys, other = chosen_menu_options()
-    write_csv(SUCCESSFUL_MENU_FILE, header, existing + [[number, date, *row, " ".join(keys), other] for row in rows])
+    write_csv(
+        SUCCESSFUL_MENU_FILE,
+        SUCCESSFUL_MENU_HEADER,
+        existing + [[number, date, *row, " ".join(keys), other, choices.get(int(row[0]), "")] for row in rows],
+    )
     description = load_menu_description()
     if description:
         SUCCESSFUL_MENU_DESCRIPTION_DIR.mkdir(exist_ok=True)
@@ -541,24 +595,28 @@ def save_successful_menu(rows, date):
 
 
 def load_successful_menus():
-    """Returns the menus of successful_menus.csv: {number: (date, keys of its options, other wishes, rows)}.
+    """Returns the menus of successful_menus.csv: {number: (date, keys of its options, other wishes, rows, products)}.
 
-    The rows are as in load_menu.
+    The rows are as in load_menu. products tells the product each food was counted as, as {fdc_id: product_id}.
     """
     if not SUCCESSFUL_MENU_FILE.exists():
         return {}
     header, rows = read_csv(SUCCESSFUL_MENU_FILE)
     check_header(header, SUCCESSFUL_MENU_HEADER, SUCCESSFUL_MENU_FILE)
     menus = {}
-    for number, date, *food, keys, other in rows:
-        menus.setdefault(int(number), (date, keys.split(), other, []))[3].append(food)
+    for number, date, *food, keys, other, product_id in rows:
+        menu = menus.setdefault(int(number), (date, keys.split(), other, [], {}))
+        menu[3].append(food)
+        if product_id:
+            menu[4][int(food[0])] = int(product_id)
     return menus
 
 
-def menu_block(rows, foods=None):
+def menu_block(rows, foods=None, choices=None):
     """Formats the menu (see load_menu) for a prompt.
 
-    With foods ({fdc_id: description}), each row also has its ID and the real description of this ID.
+    With foods ({fdc_id: description}), each row also has its ID and the real description of this ID. With choices
+    ({fdc_id: product_id}) too, it also has the product it is counted as.
     """
     header = MENU_ANSWER_HEADER
     table = [row[1:] for row in rows]
@@ -567,6 +625,12 @@ def menu_block(rows, foods=None):
         table = [
             [*row[1:], row[0], foods[int(row[0])] if row[0].isdigit() else ""] for row in rows
         ]
+    if choices is not None:
+        products = load_products()
+        header = header + ["product_id", "product"]
+        for row in table:
+            product_id = choices.get(int(row[3])) if row[3].isdigit() else None
+            row += [product_id, products[product_id]["description"]] if product_id in products else ["", ""]
     return file_block(
         f"{MENU_FILE.name} (amount: for the whole day, in the unit of the row)", rows_to_csv(header, table)
     )
@@ -872,3 +936,343 @@ def daily_need_block():
         f"{DAILY_NEED_FILE.name} (min and max: for the whole day, an empty max meaning no limit)",
         rows_to_csv(["id", "name", "unit", "min", "max"], rows),
     )
+
+
+# ---------------------------------------------------------
+# Products
+# ---------------------------------------------------------
+def load_products():
+    """Returns the products as {product_id: {fdc_id, description, shop, price, package_amount, eco, source, date}}.
+
+    price and package_amount are None when they are not known.
+    """
+    if not PRODUCT_FILE.exists():
+        return {}
+    header, rows = read_csv(PRODUCT_FILE)
+    check_header(header, PRODUCT_HEADER, PRODUCT_FILE)
+    products = {}
+    for line, row in enumerate(rows, start=2):
+        if len(row) != len(header) or not row[2]:
+            raise ValueError(f"Malformed row {line} in {PRODUCT_FILE}: {row}")
+        where = f"row {line} of {PRODUCT_FILE}"
+        products[to_int(row[0], f"product_id at {where}")] = {
+            "fdc_id": to_int(row[1], f"fdc_id at {where}"),
+            "description": row[2],
+            "shop": row[3],
+            "price": to_float(row[4], f"price at {where}") if row[4] else None,
+            "package_amount": to_float(row[5], f"package_amount at {where}") if row[5] else None,
+            "eco": row[6],
+            "source": row[7],
+            "date": row[8],
+        }
+    return products
+
+
+def save_products(products):
+    write_csv(PRODUCT_FILE, PRODUCT_HEADER, [
+        [
+            product_id, p["fdc_id"], p["description"], p["shop"],
+            "" if p["price"] is None else f"{p['price']:g}",
+            "" if p["package_amount"] is None else f"{p['package_amount']:g}",
+            p["eco"], p["source"], p["date"],
+        ]
+        for product_id, p in products.items()
+    ])
+
+
+def load_product_nutrients():
+    """Returns the nutrients given for the products as {product_id: {nutrient_id: (amount, source)}}."""
+    if not PRODUCT_NUTRIENT_FILE.exists():
+        return {}
+    header, rows = read_csv(PRODUCT_NUTRIENT_FILE)
+    check_header(header, PRODUCT_NUTRIENT_HEADER, PRODUCT_NUTRIENT_FILE)
+    nutrients = {}
+    for line, row in enumerate(rows, start=2):
+        try:
+            nutrients.setdefault(int(row[0]), {})[int(row[1])] = (float(row[2]), row[3])
+        except (IndexError, ValueError) as e:
+            raise ValueError(f"Malformed row {line} in {PRODUCT_NUTRIENT_FILE}: {row}") from e
+    return nutrients
+
+
+def save_product_nutrients(nutrients):
+    write_csv(PRODUCT_NUTRIENT_FILE, PRODUCT_NUTRIENT_HEADER, [
+        [product_id, nutrient_id, f"{amount:.6g}", source]
+        for product_id, of_product in nutrients.items()
+        for nutrient_id, (amount, source) in of_product.items()
+    ])
+
+
+def load_menu_products():
+    """Returns the product each food of the menu is counted as, as {fdc_id: product_id}."""
+    if not MENU_PRODUCT_FILE.exists():
+        return {}
+    header, rows = read_csv(MENU_PRODUCT_FILE)
+    check_header(header, MENU_PRODUCT_HEADER, MENU_PRODUCT_FILE)
+    return {int(fdc_id): int(product_id) for fdc_id, product_id in rows}
+
+
+def save_menu_products(choices):
+    write_csv(MENU_PRODUCT_FILE, MENU_PRODUCT_HEADER, list(choices.items()))
+
+
+def choose_menu_products(fdc_ids):
+    """Returns the product each of those foods of the menu is counted as, as {fdc_id: product_id}, and saves it.
+
+    It is the product chosen before, or else the first product of the food. A food without any product is left out.
+    """
+    products = load_products()
+    saved = load_menu_products()
+    choices = {}
+    for fdc_id in fdc_ids:
+        of_food = [product_id for product_id, product in products.items() if product["fdc_id"] == fdc_id]
+        if saved.get(fdc_id) in of_food:
+            choices[fdc_id] = saved[fdc_id]
+        elif of_food:
+            choices[fdc_id] = of_food[0]
+    if choices != saved:
+        save_menu_products(choices)
+    return choices
+
+
+def product_nutrient_db(nutrient_db, choices):
+    """Returns the nutrients the foods are counted with ({fdc_id: {nutrient_id: amount}}), and where they come from.
+
+    A food that is counted as a product (choices: {fdc_id: product_id}) has the nutrients given for the product, and
+    the ones of the generic food for the others. The sources are {(fdc_id, nutrient_id): source}, only for the
+    nutrients given for a product.
+    """
+    of_products = load_product_nutrients()
+    db = {fdc_id: dict(nutrients) for fdc_id, nutrients in nutrient_db.items()}
+    sources = {}
+    for fdc_id, product_id in choices.items():
+        for nutrient_id, (amount, source) in of_products.get(product_id, {}).items():
+            db.setdefault(fdc_id, {})[nutrient_id] = amount
+            sources[fdc_id, nutrient_id] = source
+    return db, sources
+
+
+def unchecked_foods(fdc_ids, choices):
+    """Returns the foods that are not checked: those without a product, or whose product was not read on site."""
+    products = load_products()
+    of_products = load_product_nutrients()
+    unchecked = []
+    for fdc_id in fdc_ids:
+        product_id = choices.get(fdc_id)
+        sources = (
+            [products[product_id]["source"], *(source for _, source in of_products.get(product_id, {}).values())]
+            if product_id in products else [""]
+        )
+        if any(normalize(source) != ON_SITE for source in sources):
+            unchecked.append(fdc_id)
+    return unchecked
+
+
+def menu_cost(menu, choices):
+    """Returns the price of the menu (a list of (fdc_id, amount, unit)), and its foods that have no price."""
+    products = load_products()
+    cost = 0
+    without_price = []
+    for fdc_id, amount, _ in menu:
+        product = products.get(choices.get(fdc_id), {})
+        if product.get("price") is None or not product.get("package_amount"):
+            without_price.append(fdc_id)
+        else:
+            cost += product["price"] * amount / product["package_amount"]
+    return cost, without_price
+
+
+def cost_note(menu, choices, descriptions):
+    """Says what the menu (a list of (fdc_id, amount, unit)) costs, nothing while no food has a price."""
+    cost, without_price = menu_cost(menu, choices)
+    if len(without_price) == len(menu):
+        return ""
+    note = f"Price of the day: {cost:.2f} euros"
+    if without_price:
+        note += f", without the {len(without_price)} of its {len(menu)} foods that have no price"
+        # A long list would hide the price
+        if len(without_price) <= 5:
+            note += ": " + ", ".join(descriptions[fdc_id] for fdc_id in without_price)
+    return note + "."
+
+
+def product_block(fdc_ids=None):
+    """Formats the products of those foods for a prompt, all of them without any, with the generic food each one is."""
+    foods = load_all_foods()
+    rows = [
+        [
+            product_id, p["description"], p["fdc_id"], foods.get(p["fdc_id"], ""), p["shop"],
+            "" if p["price"] is None else f"{p['price']:g}",
+            "" if p["package_amount"] is None else f"{p['package_amount']:g}",
+            p["eco"], p["source"],
+        ]
+        for product_id, p in load_products().items()
+        if fdc_ids is None or p["fdc_id"] in fdc_ids
+    ]
+    return file_block(
+        f"{PRODUCT_FILE.name} (the real products I buy; price: in euros for package_amount, in grams or in doses)",
+        rows_to_csv(
+            ["product_id", "product", "fdc_id", "fdc_description", "shop", "price", "package_amount", "eco", "source"],
+            rows,
+        ),
+    )
+
+
+def dependence_rows(menu, nutrient_db, needs):
+    """Returns the rows of menu_dependence.csv: the nutrients of those needs that the menu (see load_menu) counts
+    on each food for, the ones the food brings at least SHARE of the total of the day of."""
+    # What each food brings: the nutrients are given for 100g of a food, or for one dose of a supplement
+    brought = {
+        int(fdc_id): {
+            nutrient_id: nutrient_amount * (float(amount) if unit == DOSE else float(amount) / 100)
+            for nutrient_id, nutrient_amount in nutrient_db[int(fdc_id)].items()
+        }
+        for fdc_id, _, amount, unit in menu
+    }
+    rows = []
+    for fdc_id, description, _, _ in menu:
+        fdc_id = int(fdc_id)
+        for need in needs:
+            # As in the report, a nutrient that half of the foods have no data for cannot be judged
+            no_data = [i for i, nutrients in nutrient_db.items() if set(need["ids"]) - set(nutrients)]
+            if not need["ids"] or 2 * len(no_data) >= len(nutrient_db):
+                continue
+            in_day = sum(brought[fdc_id].get(i, 0) for i in need["ids"])
+            total = sum(of_food.get(i, 0) for of_food in brought.values() for i in need["ids"])
+            if total > 0 and in_day >= SHARE * total:
+                rows.append([
+                    fdc_id, description, ", ".join(map(str, need["ids"])), need["name"], need["unit"],
+                    f"{sum(nutrient_db[fdc_id].get(i, 0) for i in need['ids']):.4g}",
+                    f"{in_day:.4g}", f"{total:.4g}", round(100 * in_day / total),
+                    "yes" if total - in_day < need["min"] else "no",
+                ])
+    return rows
+
+
+def dependence_block(menu, nutrient_db, needs):
+    return file_block(
+        "menu_dependence.csv (the nutrients the menu counts on each food for)",
+        rows_to_csv(DEPENDENCE_HEADER, dependence_rows(menu, nutrient_db, needs)),
+    )
+
+
+def extract_table(text, required):
+    """Returns the csv of an LLM answer that has those columns, None without any.
+
+    The answer may hold several tables, each one in its own markdown block or ended by a blank line.
+    """
+    def is_header(line):
+        try:
+            cells = next(csv.reader([line]), [])
+        except csv.Error:
+            return False
+        return set(required) <= {cell.strip().lower() for cell in cells}
+
+    tables = []
+    current = None
+    for line in text.replace("\r\n", "\n").split("\n"):
+        if not line.strip() or line.strip().startswith("```"):
+            current = None
+        elif current is not None:
+            current.append(line)
+        elif is_header(line):
+            current = [line]
+            tables.append(current)
+    return "\n".join(tables[-1]) if tables else None
+
+
+def parse_product_answer(text, fdc_ids):
+    """Strictly validates the products of an LLM answer, which replace foods among fdc_ids, and their nutrients.
+
+    Returns the products as a list of dicts (see load_products, without date), and the nutrients as a list of
+    (product, nutrient_id, amount, source), product being the ID of a product of product.csv, or the normalized
+    description of a product of the answer.
+    """
+    product_csv = extract_table(text, PRODUCT_ANSWER_HEADER)
+    nutrient_csv = extract_table(text, PRODUCT_NUTRIENT_ANSWER_HEADER)
+    if product_csv is None and nutrient_csv is None:
+        raise ValueError(
+            f"No csv with the columns {PRODUCT_ANSWER_HEADER} nor {PRODUCT_NUTRIENT_ANSWER_HEADER} found in the clipboard."
+        )
+
+    given = {}
+    for line, record in parse_answer(product_csv, PRODUCT_ANSWER_HEADER) if product_csv else []:
+        where = f"row {line} of the products"
+        fdc_id = to_int(record["fdc_id"], f"fdc_id at {where}")
+        if fdc_id not in fdc_ids:
+            raise ValueError(f"Unexpected fdc_id {fdc_id} at {where}: it is not a food of the menu. Expected one of {sorted(fdc_ids)}.")
+        if not record["product"]:
+            raise ValueError(f"No product at {where}.")
+        if normalize(record["product"]) in given:
+            raise ValueError(f"The product '{record['product']}' is given twice ({where}).")
+        price = to_float(record["price"], f"price at {where}") if record["price"] else None
+        package_amount = to_float(record["package_amount"], f"package_amount at {where}") if record["package_amount"] else None
+        if (price is not None and price < 0) or (package_amount is not None and package_amount <= 0):
+            raise ValueError(f"Invalid price or package_amount at {where}.")
+        if record["eco"].upper() not in (*ECO_LEVELS, ""):
+            raise ValueError(f"Invalid eco '{record['eco']}' at {where}: it must be one of {', '.join(ECO_LEVELS)}, or empty.")
+        if not record["source"]:
+            raise ValueError(f"No source at {where}.")
+        given[normalize(record["product"])] = {
+            "fdc_id": fdc_id, "description": record["product"], "shop": record["shop"], "price": price,
+            "package_amount": package_amount, "eco": record["eco"].upper(), "source": record["source"],
+        }
+
+    existing = load_products()
+    by_description = {normalize(product["description"]): product_id for product_id, product in existing.items()}
+    needed = set(needed_nutrient_ids())
+    values = {}
+    for line, record in parse_answer(nutrient_csv, PRODUCT_NUTRIENT_ANSWER_HEADER) if nutrient_csv else []:
+        where = f"row {line} of the nutrients"
+        name = normalize(record["product"])
+        if name in given:
+            product = name
+        elif name.isdigit() and int(name) in existing:
+            product = int(name)
+        elif name in by_description:
+            product = by_description[name]
+        else:
+            raise ValueError(
+                f"Unknown product '{record['product']}' at {where}: it is neither a product of the first table, "
+                f"nor the product_id or the description of a product of {PRODUCT_FILE.name}."
+            )
+        nutrient_id = to_int(record["nutrient_id"], f"nutrient_id at {where}")
+        amount = to_float(record["amount"], f"amount at {where}")
+        if nutrient_id not in needed:
+            raise ValueError(f"Unexpected nutrient_id {nutrient_id} at {where}: it is not in daily_need_table.csv.")
+        if amount < 0:
+            raise ValueError(f"Negative amount at {where}.")
+        if not record["source"]:
+            raise ValueError(f"No source at {where}.")
+        if (product, nutrient_id) in values:
+            raise ValueError(f"Nutrient {nutrient_id} is given twice for '{record['product']}' ({where}).")
+        values[product, nutrient_id] = (amount, record["source"])
+    return list(given.values()), [(*key, *value) for key, value in values.items()]
+
+
+def save_product_answer(given, values, date):
+    """Saves the products and the nutrients of an answer (see parse_product_answer).
+
+    A product that its food already has (same description) is updated, and so are the nutrients already given.
+    Returns the products of the answer as {fdc_id: product_id}.
+    """
+    products = load_products()
+    known = {(p["fdc_id"], normalize(p["description"])): product_id for product_id, p in products.items()}
+    ids = {}
+    for product in given:
+        key = product["fdc_id"], normalize(product["description"])
+        if key not in known:
+            known[key] = max(products, default=0) + 1
+        products[known[key]] = {**product, "date": date}
+        ids[key[1]] = known[key]
+    if given:
+        save_products(products)
+        print(f"Successfully wrote {len(given)} products to '{PRODUCT_FILE}'.")
+
+    if values:
+        nutrients = load_product_nutrients()
+        for product, nutrient_id, amount, source in values:
+            nutrients.setdefault(ids.get(product, product), {})[nutrient_id] = (amount, source)
+        save_product_nutrients(nutrients)
+        print(f"Successfully wrote {len(values)} nutrients of products to '{PRODUCT_NUTRIENT_FILE}'.")
+    return {product["fdc_id"]: ids[normalize(product["description"])] for product in given}

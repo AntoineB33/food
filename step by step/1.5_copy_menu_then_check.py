@@ -23,7 +23,7 @@ Look for any inconsistency between the text and the table: a food of the text th
 {MENU_NOTE}"""
 
 if __name__ == "__main__":
-    # 1. The clipboard holds the answer to the prompt of step 1.0, 5.0 or of this step: the menu as a text, then its csv
+    # 1. The clipboard holds the answer to the prompt of step 1.0, 6.0 or of this step: the menu as a text, then its csv
     with errors_to_llm(MENU_NOTE):
         description, csv_text = split_menu_answer(get_clipboard())
         rows = parse_menu_csv(csv_text)

@@ -68,7 +68,11 @@ if __name__ == "__main__":
     # 1. The clipboard holds the csv of the foods answered to the prompt of step 2.0 (or of this step)
     menu = load_menu()
     foods = load_all_foods()
-    with errors_to_llm(f"A food that is in none of the two databases has {NEW} as fdc_id.\n{SEARCH_NOTE}"):
+    # The menu is given again with the error: the LLM may not have it anymore, or may have changed its descriptions
+    with errors_to_llm(
+        f"{menu_block(menu, foods)}\n\nWrite one row per row of menu.csv above, with its description exactly as it is "
+        f"there. A food that is in none of the two databases has {NEW} as fdc_id.\n{SEARCH_NOTE}"
+    ):
         menu = parse_food_list_csv(get_clipboard(), menu, foods)
 
     # 2. Save the IDs in the menu. The new foods of the menu before are forgotten: step 3.0 lists those of this one.

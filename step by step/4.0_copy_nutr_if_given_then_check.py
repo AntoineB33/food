@@ -79,8 +79,8 @@ def parse_nutrient_csv(text, new_ids):
 if __name__ == "__main__":
     new_foods = load_new_foods()
     if not new_foods:
-        # Not an error: exiting this way tells 0_run_all that the report is next
-        sys.exit(f"{NEW_FOOD_FILE.name} has no food: no nutrient to check. Go on with 5.0_get_report.")
+        # Not an error: exiting this way tells 0_run_all that the products are next
+        sys.exit(f"{NEW_FOOD_FILE.name} has no food: no nutrient to check. Go on with 5.0_get_product_prompt.")
     new_ids = [fdc_id for fdc_id, _, _ in new_foods]
     ingredients = load_ingredients()
     without_ingredient = [f"{fdc_id} ({description})" for fdc_id, description, _ in new_foods if fdc_id not in ingredients]
@@ -127,4 +127,4 @@ if __name__ == "__main__":
         f"{nutrient_block(new_ids)}\n\n{prompt}"
     )
     print("Paste it in a new discussion. If the LLM writes a csv, copy it and run this step again to save it.")
-    print("If it says it is correct, go on with 5.0_get_report.")
+    print("If it says it is correct, go on with 5.0_get_product_prompt.")
