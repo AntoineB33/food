@@ -3,17 +3,19 @@
 After each script, it says what to do with the LLM, waits, then runs the right next script. It remembers
 where the user is: closed and started again, it asks the same question again.
 """
+import builtins
 import json
 import runpy
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import common
 import pyperclip
-from common import DB_DIR, AnswerError
+from common import DB_DIR, HISTORY_DIR, AnswerError
 
 FOLDER = Path(__file__).resolve().parent
-# The script that was run last, how it ended and the prompt it gave
+# The script that was run last, how it ended, the prompt it gave, and the history file of the menu being made
 STATE_FILE = DB_DIR / "run_state.json"
 
 # What a script does: PROMPT only gives a prompt, CHECK reads the csv of the clipboard then gives the prompt
@@ -71,9 +73,62 @@ def load_state():
 
 
 def save_state(current, result, prompt):
+    history = Path(common.history_file).name if common.history_file else None
     STATE_FILE.write_text(
-        json.dumps({"step": NUMBERS[current], "result": result, "prompt": prompt}), encoding="utf-8"
+        json.dumps({"step": NUMBERS[current], "result": result, "prompt": prompt, "history": history}),
+        encoding="utf-8",
     )
+
+
+class History:
+    """A stream of the terminal that also writes what is printed to the history of the menu being made."""
+
+    def __init__(self, stream):
+        self.stream = stream
+
+    def write(self, text):
+        common.write_history(text)
+        return self.stream.write(text)
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
+def keep_history():
+    """Makes all that is printed and typed from now on go to the history too, and goes on with the history file of
+    the menu that was being made, when there is one."""
+    try:
+        name = json.loads(STATE_FILE.read_text(encoding="utf-8"))["history"]
+        if name and (HISTORY_DIR / name).exists():
+            common.history_file = HISTORY_DIR / name
+    except (OSError, ValueError, KeyError):
+        pass
+    sys.stdout, sys.stderr = History(sys.stdout), History(sys.stderr)
+    typed = builtins.input
+
+    def logged_input(question=""):
+        # The terminal shows the question and what is typed without printing them
+        file, common.history_file = common.history_file, None
+        try:
+            answer = typed(question)
+        finally:
+            common.history_file = file
+        common.write_history(f"{question}{answer}\n")
+        return answer
+
+    builtins.input = logged_input
+    common.write_history(f"\n{'-' * 20} {datetime.now():%Y-%m-%d %H:%M:%S}: run.bat is started again {'-' * 20}\n")
+
+
+def new_history():
+    """Starts the history file of a new menu, named after the date and the time."""
+    now = datetime.now()
+    HISTORY_DIR.mkdir(exist_ok=True)
+    if common.history_file:
+        print(f"The history of the menu before is in '{common.history_file}'.")
+    common.history_file = HISTORY_DIR / f"{now:%Y-%m-%d %Hh%Mm%S}.txt"
+    common.write_history(f"History of the menu started on {now:%Y-%m-%d} at {now:%H:%M:%S}\n")
+    print(f"The history of this menu is kept in '{common.history_file}'.")
 
 
 def holds_prompt(prompt):
@@ -250,6 +305,7 @@ def ask_what_next(current, result, prompt):
 
 
 if __name__ == "__main__":
+    keep_history()
     print("Steps:" + "".join(f"\n  {number}  {name}" for number, name, _, _ in STEPS))
     state = load_state()
     if state:
@@ -261,6 +317,9 @@ if __name__ == "__main__":
         current = NUMBERS.index(answer) if answer else 0
 
     while True:
+        # A menu starts at the first step, or at the step the user jumps to when no history is kept yet
+        if current == 0 or not common.history_file:
+            new_history()
         state = run(STEPS[current][1])
         save_state(current, *state)
         current = ask_what_next(current, *state)

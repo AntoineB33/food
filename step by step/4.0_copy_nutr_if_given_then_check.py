@@ -25,6 +25,7 @@ from common import (
     set_clipboard,
     to_float,
     to_int,
+    write_history_block,
 )
 
 ANSWER_NOTE = f"""as a text easy to copy in a csv format with those columns:
@@ -90,6 +91,7 @@ if __name__ == "__main__":
     # 1. When the clipboard holds the nutrient csv answered to the prompt of this step, save its rows
     text = pyperclip.paste().replace("\r\n", "\n")
     if holds_nutrient_csv(text):
+        write_history_block("ANSWER OF THE LLM, READ FROM THE CLIPBOARD", text)
         with errors_to_llm(NUTRIENT_ID_NOTE):
             rows = parse_nutrient_csv(text, set(new_ids))
         save_to_nutrient_manual(rows)

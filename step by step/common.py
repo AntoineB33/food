@@ -14,6 +14,7 @@ import math
 import os
 import re
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 
 import pyperclip
@@ -44,6 +45,9 @@ MENU_PRODUCT_FILE = DB_DIR / "menu_product.csv"
 MENU_OPTION_FILE = DB_DIR / "menu_options.json"
 # The goals and tips of the user, a free text: a menu is made, corrected and judged with them
 MENU_TIPS_FILE = DB_DIR / "menu_tips.txt"
+# What was printed, the prompts and the answers of the LLM, in one file per menu made with 0_run_all. The prompts
+# tell the address of the user: not in git
+HISTORY_DIR = DB_DIR / "history"
 
 # The amount of a food is in grams, its nutrients being given for 100g. A supplement taken as a pill has no
 # meaningful weight: its amount is a number of doses, its nutrients being given for one dose.
@@ -169,11 +173,30 @@ def answer_note(header):
 # ---------------------------------------------------------
 # Clipboard
 # ---------------------------------------------------------
+# The file of HISTORY_DIR of the menu being made: 0_run_all chooses it, a script that is run alone keeps no history
+history_file = None
+
+
+def write_history(text):
+    """Adds a text to the history of the menu being made, when one is kept."""
+    if history_file:
+        with open(history_file, "a", encoding="utf-8") as f:
+            f.write(text)
+
+
+def write_history_block(title, text):
+    """Adds a prompt or an answer of the LLM to the history, between two lines that tell what it is."""
+    write_history(
+        f"\n{'<' * 20} {title} ({datetime.now():%H:%M:%S})\n{text.strip()}\n{'>' * 20} END OF THE {title}\n\n"
+    )
+
+
 def get_clipboard():
     """Returns the clipboard text with normalized line endings; raises if it is empty."""
     text = pyperclip.paste().replace("\r\n", "\n")
     if not text.strip():
         raise ValueError("Clipboard is empty or contains no text.")
+    write_history_block("ANSWER OF THE LLM, READ FROM THE CLIPBOARD", text)
     return text
 
 
@@ -188,6 +211,7 @@ def set_clipboard(text, review=False):
     last_prompt = text
     last_prompt_is_review = review
     pyperclip.copy(text)
+    write_history_block("PROMPT, COPIED TO THE CLIPBOARD", text)
     print("The new prompt has been copied to your clipboard.")
 
 
@@ -1487,6 +1511,11 @@ def parse_product_answer(text, fdc_ids):
         raise ValueError(
             f"No csv with the columns {PRODUCT_ANSWER_HEADER} nor {PRODUCT_NUTRIENT_ANSWER_HEADER} found in the clipboard."
         )
+    # A table with its header alone is right when the other one has rows: no product whose label gives a nutrient,
+    # or only nutrients of products that are already there
+    product_csv, nutrient_csv = (table if table and "\n" in table.strip() else None for table in (product_csv, nutrient_csv))
+    if product_csv is None and nutrient_csv is None:
+        raise ValueError("The csv of the clipboard have no row: only their headers.")
 
     given = {}
     for line, record in parse_answer(product_csv, PRODUCT_ANSWER_HEADER) if product_csv else []:
