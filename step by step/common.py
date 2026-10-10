@@ -42,7 +42,7 @@ PRODUCT_NUTRIENT_FILE = DB_DIR / "product_nutrient.csv"
 MENU_PRODUCT_FILE = DB_DIR / "menu_product.csv"
 # The answers to the options of the menu, with the address of the user: not in git
 MENU_OPTION_FILE = DB_DIR / "menu_options.json"
-# The goals and tips of the user, a free text: a menu that satisfies the daily needs is judged with them
+# The goals and tips of the user, a free text: a menu is made, corrected and judged with them
 MENU_TIPS_FILE = DB_DIR / "menu_tips.txt"
 
 # The amount of a food is in grams, its nutrients being given for 100g. A supplement taken as a pill has no
@@ -892,6 +892,12 @@ def load_successful_menu_description(number):
     return menu_text(path.read_text(encoding="utf-8")) if path.exists() else ""
 
 
+def menu_tips_block():
+    """Formats the goals and tips of the user for a prompt, nothing when the file is empty or missing."""
+    tips = MENU_TIPS_FILE.read_text(encoding="utf-8").strip() if MENU_TIPS_FILE.exists() else ""
+    return f"{MENU_TIPS_FILE.name} (my goals and tips)\n```\n{tips}\n```" if tips else ""
+
+
 def review_prompt(description, rows, choices, notes="", changes=None):
     """Returns the prompt that asks for the risks and the problems of a menu (see load_menu) that satisfies the
     daily needs: what its totals do not show, as how its foods are eaten together.
@@ -900,10 +906,10 @@ def review_prompt(description, rows, choices, notes="", changes=None):
     ({fdc_id: product_id}), notes the lines that tell the foods and the wishes it was made with, changes the changes
     of the daily needs it was made with (see chosen_need_changes), the ones chosen at step 1.0 when not given.
     """
-    tips = MENU_TIPS_FILE.read_text(encoding="utf-8").strip() if MENU_TIPS_FILE.exists() else ""
+    tips = menu_tips_block()
     blocks = [daily_need_block(changes)]
     if tips:
-        blocks.append(f"{MENU_TIPS_FILE.name} (my goals and tips)\n```\n{tips}\n```")
+        blocks.append(tips)
     if description:
         blocks.append(menu_description_block(description))
     blocks.append(menu_block(rows, load_all_foods(), choices))
