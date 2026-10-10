@@ -314,7 +314,10 @@ if __name__ == "__main__":
     amounts, solved = closest_amounts(menu, nutrient_db, daily_needs) if failing else (None, False)
     changes = amount_changes(rows, amounts) if solved else []
     if changes:
-        print(f"\nThe menu satisfies the daily needs with other amounts of {len(changes)} of its {len(rows)} foods:")
+        print(
+            f"\nThe report above is the menu as it is: {len(failing)} of the daily needs are not satisfied. Changing only "
+            f"the amounts of {len(changes)} of its {len(rows)} foods, as below, satisfies them all:"
+        )
         print("\n".join(changes))
 
     if not failing:
@@ -325,7 +328,7 @@ if __name__ == "__main__":
         set_clipboard(review_prompt(load_menu_description(), rows, choices, notes), review=True)
         print("Paste it in a new discussion: it asks whether the menu has risks or problems that the totals do not show.")
         print("If the LLM writes a corrected menu, copy its whole answer and run 1.5_copy_menu_then_check. If it finds none, it is finished.")
-    elif changes and ask_yes_no("Take these amounts", True):
+    elif changes and ask_yes_no("Take these amounts (n: ask the LLM to correct the menu instead)", True):
         for row, amount in zip(rows, amounts):
             row[2] = f"{amount:g}"
         save_menu(rows)
