@@ -6,7 +6,6 @@ from common import (
     errors_to_llm,
     get_clipboard,
     load_menu,
-    load_menu_products,
     load_products,
     parse_product_answer,
     save_menu_products,
@@ -25,8 +24,7 @@ if __name__ == "__main__":
 
     # 2. A product that was just given is the one its food is counted as from now on
     choices = choose_menu_products(fdc_ids) | chosen
-    if choices != load_menu_products():
-        save_menu_products(choices)
+    save_menu_products(choices)
     products = load_products()
     for fdc_id, description, _, _ in menu:
         if fdc_id.isdigit() and int(fdc_id) in chosen:

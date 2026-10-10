@@ -44,6 +44,23 @@ OK, ANSWER_ERROR, NOTHING_TO_DO, ERROR = "ok", "answer error", "nothing to do", 
 REVIEW = "review"
 
 
+def symbol(sign, text):
+    """Returns a sign and what it means, the text alone in a terminal that cannot show the sign."""
+    try:
+        sign.encode(sys.stdout.encoding or "ascii")
+    except (UnicodeEncodeError, LookupError):
+        return text
+    return f"{sign} {text}"
+
+
+# What to do with the LLM, said in a few signs before each question: where to paste the prompt, what to copy from
+# the answer, and what to type then. ? gives the whole sentence
+NEW_CHAT, SAME_CHAT = symbol("\U0001F195", "NEW chat"), symbol("\U0001F501", "SAME chat")
+WHOLE, CSV_ONLY = symbol("\U0001F4C4", "copy WHOLE answer"), symbol("\U0001F4CA", "copy CSV only")
+CORRECT, FINISHED, FIX = symbol("\u2705", "LLM says correct:"), symbol("\U0001F3C1", "finished:"), symbol("\u26A0", "fix it")
+ENTER = symbol("\u23CE", "Enter")
+
+
 def load_state():
     """Returns (step, how it ended, prompt) of the script that was run last, or None."""
     try:
@@ -81,20 +98,23 @@ def tell_clipboard(prompt):
         )
 
 
-def ask(question, prompt=None, answers=()):
+def ask(question, prompt=None, answers=(), signs=()):
     """Asks until the answer is one of the answers, the number of a step to jump to, or q to quit.
 
+    signs say the question in a few words, which are shown instead of it: ? then shows the question itself.
     c copies the prompt again and w tells what the clipboard holds, instead of answering. Returns the answer in
     lower case, empty for Enter.
     """
     while True:
         answer = input(
-            f"\n>>> {question}\n    (c to copy the prompt again, w to know whether the clipboard holds it, "
-            "the number of a step to jump to it, q to quit): "
+            f"\n>>> {'   |   '.join(signs) or question}\n    ({'? explains, ' if signs else ''}c copies the prompt again, "
+            "w tells what the clipboard holds, a step number jumps to it, q quits): "
         ).strip().lower()
         if answer == "q":
             sys.exit()
-        if answer == "w":
+        if answer == "?" and signs:
+            print(question)
+        elif answer == "w":
             tell_clipboard(prompt)
         elif answer == "c":
             if prompt is None:
@@ -133,31 +153,35 @@ def ask_what_next(current, result, prompt):
     """Says what to do with the LLM after a script, waits, and returns the script to run then."""
     number, _, kind, copied = STEPS[current]
     following = current + 1
+    what = WHOLE if copied.startswith("the whole answer") else CSV_ONLY
     if result == ANSWER_ERROR:
         following = current
         answer = ask(
             f"Paste the prompt in the discussion that gave the csv, copy {copied} the LLM writes again, "
             f"then press Enter to run {number} again",
             prompt,
+            signs=(SAME_CHAT, what, f"{ENTER} runs {number} again"),
         )
     elif result == ERROR:
         following = current
-        answer = ask(f"Fix it, then press Enter to run {number} again", prompt)
+        answer = ask(f"Fix it, then press Enter to run {number} again", prompt, signs=(FIX, f"{ENTER} runs {number} again"))
     elif result == NOTHING_TO_DO:
         # No new food: the products are next. No food without product: the report is
         following = REPORT if current == PRODUCT_PROMPT else PRODUCT_PROMPT
-        answer = ask(f"Press Enter to run {NUMBERS[following]}", prompt)
+        answer = ask(f"Press Enter to run {NUMBERS[following]}", prompt, signs=(f"{ENTER} runs {NUMBERS[following]}",))
     elif current == PRODUCT_PROMPT:
         answer = ask(
             f"Paste the prompt in a new discussion, copy {copied} the LLM writes, then press Enter to run "
             f"{NUMBERS[following]}. The report does not need the products: type {NUMBERS[REPORT]} to go on without them",
             prompt,
+            signs=(NEW_CHAT, what, f"{ENTER} runs {NUMBERS[following]}", f"{NUMBERS[REPORT]} goes on without products"),
         )
     elif current == PRODUCTS:
         following = REPORT
         answer = ask(
             f"Press Enter to run {NUMBERS[following]}, or type {NUMBERS[PRODUCT_PROMPT]} to ask for the foods that "
-            "still have no product"
+            "still have no product",
+            signs=(f"{ENTER} runs {NUMBERS[following]}", f"{NUMBERS[PRODUCT_PROMPT]} asks the products still missing"),
         )
     elif result == REVIEW:
         following = AFTER_REPORT
@@ -167,6 +191,10 @@ def ask_what_next(current, result, prompt):
                 "problems. If the LLM writes a corrected menu, copy its whole answer, then press Enter to run "
                 f"{NUMBERS[following]}. If it finds none, it is finished: q to quit, or type {NUMBERS[0]} to start a new menu",
                 prompt,
+                signs=(
+                    NEW_CHAT, f"corrected menu: {what}, {ENTER} runs {NUMBERS[following]}",
+                    f"{FINISHED} no problem found, q quits, {NUMBERS[0]} starts a new menu",
+                ),
             )
             # Enter with the prompt still in the clipboard would give the script its own prompt to read
             if answer or not holds_prompt(prompt):
@@ -175,7 +203,10 @@ def ask_what_next(current, result, prompt):
     elif current == REPORT and prompt is None:
         # The state of a report that was run before it gave a prompt for a menu that satisfies the daily needs
         following = 0
-        answer = ask(f"It is finished: q to quit, or press Enter to start a new menu at {NUMBERS[following]}")
+        answer = ask(
+            f"It is finished: q to quit, or press Enter to start a new menu at {NUMBERS[following]}",
+            signs=(f"{FINISHED} q quits", f"{ENTER} starts a new menu at {NUMBERS[following]}"),
+        )
     elif current == REPORT:
         # The LLM corrects the products or the menu: what its answer holds tells which script reads it
         while True:
@@ -183,6 +214,7 @@ def ask_what_next(current, result, prompt):
                 f"Paste the prompt in a new discussion, copy the whole answer of the LLM, then press Enter: it runs "
                 f"{NUMBERS[PRODUCTS]} when the LLM corrected products, {NUMBERS[AFTER_REPORT]} when it corrected the menu",
                 prompt,
+                signs=(NEW_CHAT, what, f"{ENTER} runs {NUMBERS[PRODUCTS]} (products) or {NUMBERS[AFTER_REPORT]} (menu)"),
             )
             answered = None if holds_prompt(prompt) else common.answer_kind(pyperclip.paste())
             if answer or answered:
@@ -196,6 +228,10 @@ def ask_what_next(current, result, prompt):
                 f"{number} again. If it says it is correct, type y to go on with {NUMBERS[following]}",
                 prompt,
                 answers=("y",),
+                signs=(
+                    NEW_CHAT, f"corrected: {what}, {ENTER} runs {number} again",
+                    f"{CORRECT} y goes on with {NUMBERS[following]}",
+                ),
             )
             # Enter with the prompt still in the clipboard would give the script its own prompt to read
             if answer or not holds_prompt(prompt):
@@ -208,6 +244,7 @@ def ask_what_next(current, result, prompt):
             f"Paste the prompt in a new discussion, copy {copied} the LLM writes, "
             f"then press Enter to run {NUMBERS[following]}",
             prompt,
+            signs=(NEW_CHAT, what, f"{ENTER} runs {NUMBERS[following]}"),
         )
     return NUMBERS.index(answer) if answer in NUMBERS else following
 

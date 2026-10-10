@@ -1280,7 +1280,8 @@ def save_product_nutrients(nutrients):
 
 
 def load_menu_products():
-    """Returns the product each food of the menu is counted as, as {fdc_id: product_id}."""
+    """Returns the product each food is counted as, as {fdc_id: product_id}: the foods of the menu, and the ones
+    of the menus before it."""
     if not MENU_PRODUCT_FILE.exists():
         return {}
     header, rows = read_csv(MENU_PRODUCT_FILE)
@@ -1289,7 +1290,15 @@ def load_menu_products():
 
 
 def save_menu_products(choices):
-    write_csv(MENU_PRODUCT_FILE, MENU_PRODUCT_HEADER, list(choices.items()))
+    """Saves the product each food of the menu is counted as ({fdc_id: product_id}).
+
+    The product of a food that the menu does not have anymore is kept: a later menu that has this food counts it
+    as this product again.
+    """
+    saved = load_menu_products()
+    choices = choices | {fdc_id: product_id for fdc_id, product_id in saved.items() if fdc_id not in choices}
+    if choices != saved:
+        write_csv(MENU_PRODUCT_FILE, MENU_PRODUCT_HEADER, list(choices.items()))
 
 
 def choose_menu_products(fdc_ids):
@@ -1306,8 +1315,7 @@ def choose_menu_products(fdc_ids):
             choices[fdc_id] = saved[fdc_id]
         elif of_food:
             choices[fdc_id] = of_food[0]
-    if choices != saved:
-        save_menu_products(choices)
+    save_menu_products(choices)
     return choices
 
 

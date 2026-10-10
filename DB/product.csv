@@ -25,3 +25,18 @@ product_id,fdc_id,description,shop,price,package_amount,eco,source,date
 24,170393,Carottes vrac,Auchan Palaiseau,1.5,1000,A,estimate,2026-10-10
 25,170569,Noix du Brésil (vrac ou sachet),Auchan Palaiseau,4,200,C,estimate,2026-10-10
 26,7,"Deva Vegan Multivitamin & Mineral Supplement, Iron Free",iHerb,12.34,90,,https://fr.iherb.com/pr/deva-vegan-multivitamin-mineral-supplement-with-greens-iron-free-90-coated-tablets/18166,2026-10-10
+27,173904,Auchan Flocons d'avoine,Auchan Supermarché Palaiseau,1.05,500,,https://fr.openfoodfacts.org/produit/3596710443673/flocons-d-avoine-auchan-retail-services,2026-10-10
+28,175215,Sojasun Boisson de soja calcium vitamine D,Auchan Supermarché Palaiseau,,1000,,https://www.auchan.fr/sojasun-boisson-de-soja-calcium-vitamine-d/pr-C1178086,2026-10-10
+29,172470,Jardin Bio Etic Pur beurre de cacahuète sans sucres ajoutés,Auchan Supermarché Palaiseau,,350,,https://www.auchan.fr/jardin-bio-etic-pur-beurre-de-cacahuete-sans-sucres-ajoutes/pr-C1270576,2026-10-10
+30,172421,Auchan Lentilles préparées,Auchan Supermarché Palaiseau,1.29,530,,https://www.chronodrive.com/auchan--lentilles-preparees-P4745,2026-10-10
+31,169287,Auchan Epinards hachés,Auchan Supermarché Palaiseau,0.95,1000,,https://www.chronodrive.com/auchan--epinards-haches-P329696,2026-10-10
+32,8,Calcium 500 mg,Pharmacie Palaiseau Coeur de Ville,,100,,estimate,2026-10-10
+33,169738,Auchan Bio Pâtes Penne rigate intégrale au blé complet,Auchan Supermarché Palaiseau,1.27,500,,https://www.houra.fr/auchan-bio-pates-penne-rigate-integrale-au-ble-complet-bio-500g/1443613/,2026-10-10
+34,170054,Auchan Sauce aux tomates fraîches,Auchan Supermarché Palaiseau,,190,,https://www.auchan.fr/auchan-sauce-aux-tomates-fraiches/pr-C1227257,2026-10-10
+35,1,Gayelord Hauser Superlevure 100% levure de bière en fines paillettes,Auchan Supermarché Palaiseau,,150,,https://www.auchan.fr/gayelord-hauser-superlevure-100-levure-de-biere-en-fines-paillettes/pr-C1274582,2026-10-10
+36,169098,Auchan Pur jus d'orange sans pulpe,Auchan Supermarché Palaiseau,4.15,2000,,https://www.chronodrive.com/auchan--pur-jus-dorange-sans-pulpe-P129355,2026-10-10
+37,3,Veganicity Vitamine B12 1000µg cyanocobalamine,Un Monde Vegan,9.45,90,,https://www.unmondevegan.com/epicerie/15817-vitamine-b12--1000g-cyanocobalamine.html,2026-10-10
+38,6,Myprotein Isolat de protéine de pois,myprotein.fr,10.99,480,,https://fr.myprotein.com/p/nutrition-sportive/isolat-de-proteine-de-pois/10530136/,2026-10-10
+39,9,Soy Seitan en Tranches Bio,houra.fr,5.24,250,,https://www.houra.fr/soy-seitan-en-tranches-bio-2x125g/1183375/,2026-10-10
+40,172336,Auchan Huile de colza,houra.fr,2.19,1000,,https://www.houra.fr/auchan-huile-de-colza-1l/1443896/,2026-10-10
+41,169736,AUCHAN Essentiel Coquillettes,chronodrive.com,1.35,1000,,https://www.chronodrive.com/auchan--essentiel---coquillettes-P581476,2026-10-10

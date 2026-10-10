@@ -1,89 +1,42 @@
-import pandas as pd
-import io
+### Daily Menu
 
-menu_csv = """description,amount,unit,fdc_id,fdc_description,product_id,product
-Oats (dry),130,g,169705,Oats (Includes foods for USDA's Food Distribution Program),1,Terres et Céréales Bio Flocons D'Avoine Bio
-Soy milk (fortified),630,g,172456,"Soymilk, original and vanilla, with added calcium, vitamins A and D",2,Alpro Boisson Soja Nature Calcium
-Walnuts (raw),5,g,170187,"Nuts, walnuts, english",3,Auchan Cerneaux de Noix
-Black tea (dry),4,g,10,Black tea (dry),4,Thé noir Lipton Yellow Label
-Water,2500,g,175103,"Beverages, water, tap, municipal",5,Eau du robinet
-Complete vegan multivitamin and mineral supplement (pill),1,dose,7,Vegan multivitamin,6,Deva Vegan Multivitamin
-Algae oil supplement (capsule),1,dose,2,"Algae oil supplement, pill",7,Omega 3 d'algues Vegan
-Vitamin D supplement (pill),1,dose,4,"Vitamin D3 supplement (vegan), pill",17,Natura Force Vitamine D3 K2 végétale (gélules)
-"Tofu (firm, raw)",150,g,172475,"Tofu, raw, firm, prepared with calcium sulfate",8,Bjorg Tofu nature veggie bio
-White rice (dry),120,g,169756,"Rice, white, long-grain, regular, raw, unenriched",19,Auchan Riz long grain incollable 10 min
-Potato (raw),100,g,170026,"Potatoes, flesh and skin, raw",9,Pommes de terre
-Broccoli (raw),200,g,170379,"Broccoli, raw",10,Brocoli
-Olive oil,25,g,171413,"Oil, olive, salad or cooking",11,Auchan Huile d'Olive vierge extra origine Espagne
-Iodized salt,4,g,173468,"Salt, table",12,Sel Fin Iodé CEREBOS
-Red lentils (dry),80,g,174284,"Lentils, pink or red, raw",13,Auchan Lentilles corail
-Soy protein isolate (powder),60,g,174276,Soy protein isolate,14,MyProtein Isolat de protéine de soja (Chocolat onctueux)
-Carrot (raw),150,g,170393,"Carrots, raw",15,Carottes
-Brazil nut (raw),5,g,170569,"Nuts, brazilnuts, dried, unblanched",16,Noix du Brésil
-Soy lecithin (granules),5,g,171426,"Oil, soybean lecithin",18,SFB Lecithine De Soja Granulés"""
+**Breakfast (Quick & Filling)**
 
-menu = pd.read_csv(io.StringIO(menu_csv))
-print(menu.head())
+* **Rolled oats**: 30g
+* **Pea protein powder**: 75g
+* **Soy milk, fortified**: 200g (about 1 glass)
+* **Peanut butter**: 30g (about 2 tablespoons)
+* **Banana**: 120g (about 1 medium banana, added for potassium)
+* **Vegan multivitamin**: 1 dose
+* **Water**: 400g
 
+**Lunch (Fast Prep)**
 
+* **Seitan, plain**: 120g (pan-fried)
+* **White rice, dry**: 130g (boiled, slightly reduced to balance calories from the banana)
+* **Spinach, frozen**: 100g (increased for potassium and micronutrients)
+* **Olive oil**: 15g (about 1 tablespoon)
+* **Canola oil**: 20g (about 1.5 tablespoons)
+* **Salt**: 2g
+* **Vitamin D3 supplement (vegan), pill**: 1 dose
+* **Algae oil supplement, pill**: 1 dose
+* **Water**: 1300g
 
-            description  amount unit  fdc_id                                                      fdc_description  product_id                                      product
-0            Oats (dry)     130    g  169705           Oats (Includes foods for USDA's Food Distribution Program)           1  Terres et Céréales Bio Flocons D'Avoine Bio
-1  Soy milk (fortified)     630    g  172456  Soymilk, original and vanilla, with added calcium, vitamins A and D           2            Alpro Boisson Soja Nature Calcium
-2         Walnuts (raw)       5    g  170187                                               Nuts, walnuts, english           3                      Auchan Cerneaux de Noix
-3       Black tea (dry)       4    g      10                                                      Black tea (dry)           4                 Thé noir Lipton Yellow Label
-4                 Water    2500    g  175103                                     Beverages, water, tap, municipal           5                               Eau du robinet
+**Afternoon Snack (Iron-Safe Tea Time)**
 
+* **Black tea (dry)**: 9g
+* **Calcium supplement**: 1 dose
+* **Water**: 300g (hot, for steeping the tea)
 
+**Dinner (Bioavailability Focus)**
 
-import pandas as pd
-import json
-import urllib.request
-# Just checking if we can find fdc_ids with choline for Oats, Tofu, Lentils
-# FDC data is usually online, but I don't have direct access here.
-# Let's write a small script to search the FDC API if I had a key, but I don't.
-pass
+* **Tofu, firm**: 150g (pan-fried)
+* **Pasta, white, dry**: 50g (boiled in water)
+* **Tomato sauce, canned**: 150g (about 1/2 cup, increased for potassium)
+* **Nutritional yeast**: 5g
+* **Orange juice**: 500g (reduced to balance sugars/calories after adding the banana)
+* **Choline supplement, pill**: 2 doses
+* **Vitamin B12 supplement, pill**: 1 dose
+* **Water**: 1200g
 
-
-
-import urllib.request
-import json
-
-# FDC API is not accessible without a key, but I can download a small sample if needed.
-# Since I can't easily query FDC without an API key, I will estimate.
-pass
-
-
-I correct the menu itself (Correction 3) by replacing the multivitamin with an iron-free version to eliminate the iron excess, and by adding a choline supplement to reach the choline minimum, because adding food sources of choline would push the menu over the maximum energy limit.
-
-**Breakfast**
-
-* Oats (dry): 130 g (about 1.5 cups)
-* Soy milk (fortified): 630 g (about 2.6 cups)
-* Walnuts (raw): 5 g (about 2 teaspoons)
-* Black tea (dry): 4 g (2 teaspoons)
-* Water: 500 g (2 glasses)
-* Complete vegan multivitamin and mineral supplement, iron-free (pill): 1 dose
-* Algae oil supplement (capsule): 1 dose
-* Vitamin D supplement (pill): 1 dose
-* Choline supplement (pill): 1 dose
-
-**Lunch**
-
-* Tofu (firm, raw): 150 g (about 0.6 block)
-* White rice (dry): 120 g (about 0.6 cup)
-* Potato (raw): 100 g (1 small piece)
-* Broccoli (raw): 200 g (2 cups florets)
-* Olive oil: 25 g (about 1.5 tablespoons)
-* Iodized salt: 2 g (1/3 teaspoon)
-* Water: 1000 g (4 glasses)
-
-**Dinner**
-
-* Red lentils (dry): 80 g (about 0.4 cup)
-* Soy protein isolate (powder): 60 g (2 scoops)
-* Carrot (raw): 150 g (2 medium pieces)
-* Brazil nut (raw): 5 g (1 piece)
-* Iodized salt: 2 g (1/3 teaspoon)
-* Soy lecithin (granules): 5 g (about 0.75 tablespoon)
-* Water: 1000 g (4 glasses)
+---
