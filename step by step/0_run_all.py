@@ -22,6 +22,8 @@ STATE_FILE = DB_DIR / "run_state.json"
 # that checks it, and is run again with each corrected csv the LLM writes, SAVE only saves and gives no prompt
 PROMPT, CHECK, SAVE = "prompt", "check", "save"
 STEPS = [
+    ("0.0", "0.0_get_menu_from_pool", PROMPT, "the csv of the foods"),
+    ("0.5", "0.5_copy_pool", SAVE, "the csv of the foods"),
     ("1.0", "1.0_get_menu_prompt", PROMPT, "the whole answer (the menu as a text, then its csv)"),
     ("1.5", "1.5_copy_menu_then_check", CHECK, "the whole answer (the menu as a text, then its csv)"),
     ("2.0", "2.0_get_food_prompt", PROMPT, "the csv of the foods"),
@@ -42,6 +44,9 @@ NEW_FOODS = NUMBERS.index("3.0")
 LIMITS = NUMBERS.index("6.5")
 # Where the corrected menu of the report goes
 AFTER_REPORT = NUMBERS.index("1.5")
+# A menu starts at one of them: it is computed from the food pool, to which the LLM may add foods first, or the
+# LLM writes it
+POOL, POOL_FOODS, LLM_MENU = NUMBERS.index("0.0"), NUMBERS.index("0.5"), NUMBERS.index("1.0")
 
 # How a script ended: its prompt is in the clipboard, the prompt that tells the LLM about the error of its csv is,
 # the script says there is nothing to ask the LLM and that the next part is next, or it failed for another reason
@@ -243,20 +248,30 @@ def ask_what_next(current, result, prompt):
             "still have no product",
             signs=(f"{ENTER} runs {NUMBERS[following]}", f"{NUMBERS[PRODUCT_PROMPT]} asks the products still missing"),
         )
-    elif current == LIMITS:
-        following = REPORT
+    elif current == POOL_FOODS:
+        following = POOL
         answer = ask(f"Press Enter to run {NUMBERS[following]}", signs=(f"{ENTER} runs {NUMBERS[following]}",))
+    elif current == LIMITS:
+        # A menu that has no text yet was computed from the food pool: it is computed again from it within the
+        # limits. Another one keeps its foods: the report computes their amounts
+        following = REPORT if common.load_menu_description() else POOL
+        other = POOL if following == REPORT else REPORT
+        answer = ask(
+            f"Press Enter to run {NUMBERS[following]}, or type {NUMBERS[other]}: {NUMBERS[POOL]} computes a menu from the "
+            f"food pool within the limits, {NUMBERS[REPORT]} computes the amounts of the foods of this menu within them",
+            signs=(f"{ENTER} runs {NUMBERS[following]}", f"{NUMBERS[other]} is the other way"),
+        )
     elif result == REVIEW:
         following = AFTER_REPORT
         while True:
             answer = ask(
                 "The menu satisfies the daily needs. Paste the prompt in a new discussion: it asks for its risks and "
                 "problems. If the LLM writes a corrected menu, copy its whole answer, then press Enter to run "
-                f"{NUMBERS[following]}. If it finds none, it is finished: q to quit, or type {NUMBERS[0]} to start a new menu",
+                f"{NUMBERS[following]}. If it finds none, it is finished: q to quit, or type {NUMBERS[POOL]} or {NUMBERS[LLM_MENU]} to start a new menu",
                 prompt,
                 signs=(
                     NEW_CHAT, f"corrected menu: {what}, {ENTER} runs {NUMBERS[following]}",
-                    f"{FINISHED} no problem found, q quits, {NUMBERS[0]} starts a new menu",
+                    f"{FINISHED} no problem found, q quits, {NUMBERS[POOL]} or {NUMBERS[LLM_MENU]} starts a new menu",
                 ),
             )
             # Enter with the prompt still in the clipboard would give the script its own prompt to read
@@ -265,7 +280,7 @@ def ask_what_next(current, result, prompt):
             print("The clipboard still holds the prompt: copy the answer of the LLM first, or type q if it finds no problem.")
     elif current == REPORT and prompt is None:
         # The state of a report that was run before it gave a prompt for a menu that satisfies the daily needs
-        following = 0
+        following = POOL
         answer = ask(
             f"It is finished: q to quit, or press Enter to start a new menu at {NUMBERS[following]}",
             signs=(f"{FINISHED} q quits", f"{ENTER} starts a new menu at {NUMBERS[following]}"),
@@ -323,16 +338,21 @@ if __name__ == "__main__":
     state = load_state()
     if state:
         # The script is not run again: its prompt may already be in a discussion
-        print(f"\nYou were at step {NUMBERS[state[0]]}, which was already run. Type 1.0 to start again from the beginning.")
+        print(f"\nYou were at step {NUMBERS[state[0]]}, which was already run. Type {NUMBERS[POOL]} or {NUMBERS[LLM_MENU]} to start a new menu.")
         current = ask_what_next(*state)
     else:
-        answer = ask("Press Enter to start at 1.0")
-        current = NUMBERS.index(answer) if answer else 0
+        answer = ask(
+            f"Press Enter to start at {NUMBERS[POOL]}, which computes a menu from the food pool, or type "
+            f"{NUMBERS[LLM_MENU]} for the LLM to write one"
+        )
+        current = NUMBERS.index(answer) if answer else POOL
+    previous = None
 
     while True:
-        # A menu starts at the first step, or at the step the user jumps to when no history is kept yet
-        if current == 0 or not common.history_file:
+        # A menu starts at one of the two first steps, or at the step the user jumps to when no history is kept
+        # yet. The pool step that is run again after the LLM added foods to the pool is the same menu
+        if current == LLM_MENU or (current == POOL and previous != POOL_FOODS) or not common.history_file:
             new_history()
         state = run(STEPS[current][1])
         save_state(current, *state)
-        current = ask_what_next(current, *state)
+        previous, current = current, ask_what_next(current, *state)

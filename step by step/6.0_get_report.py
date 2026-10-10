@@ -16,6 +16,8 @@ from common import (
     ON_SITE,
     PRODUCT_NOTE,
     PRODUCT_NUTRIENT_NOTE,
+    add_to_food_pool,
+    amount_step,
     ask_yes_no,
     choose_menu_products,
     cost_note,
@@ -27,6 +29,7 @@ from common import (
     load_daily_needs,
     load_food_limits,
     load_food_nutrients,
+    load_food_pool,
     load_identified_menu,
     load_menu,
     load_menu_description,
@@ -84,6 +87,13 @@ Is each amount of the table realistic and safe to have every day? Judge the amou
 If they all are, write the menu again as a text with the amounts of the table, each one spread over the meals as the text spreads it now, then the table again as a csv, with the description, the amount and the unit of every food unchanged: do not change any amount.
 {MENU_NOTE}
 If some are not, do not write the menu. Say why in a few sentences, then write the limits of the foods at fault only, {LIMIT_NOTE}"""
+# The same for a menu that step 0.0 computed from the food pool, which has no text yet
+MEAL_PROMPT = f"""Above is my vegan menu for a day, as a table: its foods and their amounts were computed so that the total of the day is between min and max for each of my daily nutrient needs, at the lowest price.
+Is each amount of the table realistic and safe to have every day? Judge the amounts only, not the choice of the foods.{{limits}}
+If they all are, write the menu as a text: spread the foods and their amounts over the meals of the day, with how each food is prepared{{tips}}. Then write the table again as a csv, with the description, the amount and the unit of every food unchanged: do not change any amount nor any food.
+{MENU_NOTE}
+If some are not, do not write the menu. Say why in a few sentences, then write the limits of the foods at fault only, {LIMIT_NOTE}"""
+MEAL_TIPS_NOTE = ", and follow my goals and tips of menu_tips.txt for what is eaten together or apart"
 # Told when a food of the menu already has limits
 AMOUNT_LIMIT_NOTE = " The amounts are within food_limit.csv, the limits that were already given: only give a limit of those foods again to change it."
 # Told by the prompt that corrects the menu when some foods have limits, then when amounts of the menu were out of them
@@ -178,13 +188,6 @@ def find_better_product(menu, generic_db, choices, daily_needs):
             if not build_report(menu, nutrient_db, daily_needs)[1]:
                 return fdc_id, product_id
     return None
-
-
-def amount_step(amount, unit):
-    """Returns what the amount of a food is a multiple of: a whole dose, or grams as precise as the amount is small."""
-    if unit == DOSE:
-        return 1
-    return 5 if amount >= 100 else 1 if amount >= 10 else 0.5 if amount >= 2 else 0.1
 
 
 def solve_amounts(menu, nutrient_db, daily_needs, limits, margin=MARGIN, strict=True):
@@ -377,35 +380,46 @@ if __name__ == "__main__":
         print("\nThe menu satisfies the daily needs with these amounts, which its text does not have yet:")
         print("\n".join(changes))
 
-    if not failing and not changes:
+    # A menu computed from the food pool at step 0.0 has no text yet
+    described = bool(load_menu_description())
+    if not failing and not changes and described:
         print("No nutrition lacks or excesses found. The menu satisfies the daily needs!")
         save_successful_menu(rows, date.today().isoformat(), choices)
+        # Its foods are worth having in the pool, each one with at most this amount when it has no limit yet
+        if load_food_pool() is not None:
+            added = add_to_food_pool({fdc_id: amount for fdc_id, amount, _ in menu})
+            if added:
+                print(f"{len(added)} of its foods are added to the food pool: {', '.join(descriptions[fdc_id] for fdc_id in added)}.")
         # The totals do not tell everything: the LLM looks for what is wrong in the way the menu is eaten
         notes = menu_food_note() + menu_option_note(MENU_OPTION_KEEP_INTRO)
         set_clipboard(review_prompt(load_menu_description(), rows, choices, notes), review=True)
         print("Paste it in a new discussion: it asks whether the menu has risks or problems that the totals do not show.")
         print("If the LLM writes a corrected menu, copy its whole answer and run 1.5_copy_menu_then_check. If it finds none, it is finished.")
     # Amounts that are only brought back within the limits are not a choice
-    elif changes and (not failing or ask_yes_no("Take these amounts (n: ask the LLM to correct the menu instead)", True)):
+    elif (changes or (not described and not failing)) and (
+        not failing or ask_yes_no("Take these amounts (n: ask the LLM to correct the menu instead)", True)
+    ):
         for row, amount in zip(rows, amounts):
             row[2] = f"{amount:g}"
-        # Until the LLM writes the text again, it is the one of the amounts of before
-        save_menu_text_amounts(written)
         if rows != saved:
             save_menu(rows)
-        # The LLM says whether the amounts are realistic. The text of the menu still has the amounts of before: it
-        # writes it again when they are
-        description = load_menu_description()
-        blocks = [menu_description_block(description)] if description else []
-        blocks.append(menu_block(rows))
+        # The LLM says whether the amounts are realistic, then writes the text of the menu when they are
         of_menu = food_limit_block(set(fdc_ids))
-        if of_menu:
-            blocks.append(of_menu)
-        blocks.append(AMOUNT_PROMPT.format(changes="\n".join(changes), limits=AMOUNT_LIMIT_NOTE if of_menu else ""))
-        set_clipboard("\n\n".join(blocks))
+        limit_note = AMOUNT_LIMIT_NOTE if of_menu else ""
+        if described:
+            # Until it is written again, the text is the one of the amounts of before
+            save_menu_text_amounts(written)
+            blocks = [menu_description_block(load_menu_description()), menu_block(rows), of_menu]
+            blocks.append(AMOUNT_PROMPT.format(changes="\n".join(changes), limits=limit_note))
+        else:
+            tips = menu_tips_block()
+            blocks = [tips, menu_block(rows), of_menu]
+            blocks.append(MEAL_PROMPT.format(limits=limit_note, tips=MEAL_TIPS_NOTE if tips else ""))
+        set_clipboard("\n\n".join(block for block in blocks if block))
         print("Paste it in a new discussion: it asks whether these amounts are realistic, and copy the whole answer.")
-        print("If the LLM wrote the menu again, run 1.5_copy_menu_then_check: it only saves the text, then run this step again.")
+        print("If the LLM wrote the text of the menu, run 1.5_copy_menu_then_check: it only saves the text, then run this step again.")
         print("If it wrote limits, run 6.5_copy_limits, then this step again: it computes the amounts within them.")
+        print("A menu that comes from the food pool is rather computed again from it, at step 0.0_get_menu_from_pool.")
     else:
         # 5. The LLM corrects what is wrong, among the numbers of the products, the products and the menu
         values = unread_values(rows, choices, sources, failing)

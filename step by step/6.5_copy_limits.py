@@ -23,4 +23,5 @@ if __name__ == "__main__":
         if fdc_id.isdigit() and int(fdc_id) in limits:
             print(f"'{description}': {limit_text(*limits[int(fdc_id)], unit)} a day.")
     print(f"Saved in '{FOOD_LIMIT_FILE}', for this menu and the next ones: edit this file to change them.")
-    print("Go on with 6.0_get_report: it computes the amounts again within them.")
+    print("Go on with 0.0_get_menu_from_pool when the menu was computed from the food pool: it computes it again within them.")
+    print("Otherwise go on with 6.0_get_report: it computes the amounts of the foods of the menu again within them.")

@@ -51,6 +51,9 @@ MENU_TIPS_FILE = DB_DIR / "menu_tips.txt"
 # The least and the most of a food that is realistic and safe in a day, for the foods an LLM refused an amount of:
 # the amounts that step 6.0 computes stay within them, in every menu
 FOOD_LIMIT_FILE = DB_DIR / "food_limit.csv"
+# The foods the user is willing to buy and eat: step 0.0 computes a menu from them. Each one has a max in
+# food_limit.csv. The foods of a menu that satisfies the daily needs are added to it
+FOOD_POOL_FILE = DB_DIR / "food_pool.csv"
 # What was printed, the prompts and the answers of the LLM, in one file per menu made with 0_run_all. The prompts
 # tell the address of the user: not in git
 HISTORY_DIR = DB_DIR / "history"
@@ -89,6 +92,9 @@ ON_SITE = "on site"
 MENU_ANSWER, PRODUCT_ANSWER, LIMIT_ANSWER = "menu", "products", "limits"
 # min, max: in the unit of the food, for a day, empty without limit
 FOOD_LIMIT_HEADER = ["fdc_id", "description", "min", "max"]
+FOOD_POOL_HEADER = ["fdc_id", "description"]
+# How the LLM writes the foods it proposes for the pool: max is the most of the food in a day
+POOL_ANSWER_HEADER = ["description", "fdc_id", "fdc_description", "max"]
 # How the LLM writes the limits of the foods it refuses the amount of
 LIMIT_ANSWER_HEADER = ["description", "min", "max"]
 LIMIT_NOTE = f"""as a text easy to copy in a csv format with those columns:
@@ -120,6 +126,13 @@ MENU_NOTE = f"""First write the menu as a text: each meal of the day, with its f
 {MENU_RULES}
 - The text and the csv must say the same: every food of the text is in the csv with the sum of its amounts, and the csv has no other food."""
 SEARCH_NOTE = """Use your web search tool to look into SR Legacy 2018 from fdc.nal.usda.gov (its food.csv file). Your memory of the IDs is not reliable: never write an fdc_id you did not read. A SR Legacy fdc_id is between 167512 and 175304, it is not a NDB number."""
+POOL_NOTE = f"""Write them as a text easy to copy in a csv format with those columns:
+{",".join(f'"{col}"' for col in POOL_ANSWER_HEADER)}
+- description: the food as you would name it.
+- fdc_id, fdc_description: its ID in SR Legacy 2018 or in food_manual.csv, and its exact description there, in the state it is weighed in (raw, cooked, dry, ...). They are checked against the databases.
+- max: the most of this food that is realistic and safe to have every day, in grams, or in doses for a food of food_manual.csv whose unit is {DOSE}.
+- Only vegan foods that are in one of the two databases, and that food_pool.csv does not have yet.
+{SEARCH_NOTE}"""
 # The options of the menu asked at step 1.0: (key, question, what the prompt says when it is chosen, what a menu
 # made with it is said to be made)
 MENU_OPTIONS = [
@@ -1359,6 +1372,107 @@ def parse_limit_answer(text, menu):
             raise ValueError(f"Invalid limits at row {line}: the min cannot be negative, and the max cannot be under the min.")
         limits[ids[normalize(record["description"])]] = (low, high)
     return limits
+
+
+# ---------------------------------------------------------
+# Food pool
+# ---------------------------------------------------------
+def amount_step(amount, unit):
+    """Returns what the amount of a food is a multiple of: a whole dose, or grams as precise as the amount is small."""
+    if unit == DOSE:
+        return 1
+    return 5 if amount >= 100 else 1 if amount >= 10 else 0.5 if amount >= 2 else 0.1
+
+
+def judged_needs(nutrient_db, daily_needs):
+    """Returns the daily needs (see load_daily_needs) that can be judged for those foods ({fdc_id: {nutrient_id:
+    amount}}): a nutrient that half of the foods have no data for cannot."""
+    return [
+        need for need in daily_needs
+        if need["ids"]
+        and 2 * sum(1 for nutrients in nutrient_db.values() if set(need["ids"]) - set(nutrients)) < len(nutrient_db)
+    ]
+
+
+def load_food_pool():
+    """Returns the IDs of the foods of the pool, None when there is no pool yet."""
+    if not FOOD_POOL_FILE.exists():
+        return None
+    header, rows = read_csv(FOOD_POOL_FILE)
+    check_header(header, FOOD_POOL_HEADER, FOOD_POOL_FILE)
+    # A manual food may have been removed since
+    foods = load_all_foods()
+    ids = [to_int(row[0], f"fdc_id in {FOOD_POOL_FILE}") for row in rows]
+    return [fdc_id for fdc_id in dict.fromkeys(ids) if fdc_id in foods]
+
+
+def add_to_food_pool(amounts):
+    """Adds foods to the pool, with the most of each one in a day ({fdc_id: max}), and returns the ones it did not have.
+
+    The max becomes the limit of a food that had none: the limit a food already has is kept.
+    """
+    foods = load_all_foods()
+    pool = load_food_pool() or []
+    added = [fdc_id for fdc_id in amounts if fdc_id not in pool]
+    if added or not FOOD_POOL_FILE.exists():
+        write_csv(FOOD_POOL_FILE, FOOD_POOL_HEADER, [[fdc_id, foods[fdc_id]] for fdc_id in pool + added])
+    limits = load_food_limits()
+    without = {
+        fdc_id: (limits.get(fdc_id, (None, None))[0], most)
+        for fdc_id, most in amounts.items() if limits.get(fdc_id, (None, None))[1] is None
+    }
+    if without:
+        save_food_limits(without)
+    return added
+
+
+def start_food_pool():
+    """Returns the IDs of the foods of the pool. The first time, it is made of the foods of the menus of
+    successful_menus.csv, the most of each one being its largest amount in them."""
+    pool = load_food_pool()
+    if pool is None:
+        most = {}
+        for _, _, _, rows, _, _ in load_successful_menus().values():
+            for fdc_id, _, amount, _ in rows:
+                most[int(fdc_id)] = max(most.get(int(fdc_id), 0), float(amount))
+        foods = load_all_foods()
+        add_to_food_pool({fdc_id: amount for fdc_id, amount in most.items() if fdc_id in foods})
+        pool = load_food_pool()
+        print(
+            f"The food pool is started with the {len(pool)} foods of the saved menus, in '{FOOD_POOL_FILE}'. The most of "
+            f"each one in a day is its largest amount in them, in '{FOOD_LIMIT_FILE}': edit both files as you wish."
+        )
+    return pool
+
+
+def food_pool_block(pool):
+    """Formats the foods of the pool for a prompt, with the least and the most of each one in a day."""
+    foods = load_all_foods()
+    units = load_food_units()
+    limits = load_food_limits()
+    return file_block(
+        f"{FOOD_POOL_FILE.name} (the foods I am willing to buy and eat, with the least and the most of each one in a day)",
+        rows_to_csv(["fdc_id", "fdc_description", "unit", "min", "max"], [
+            [fdc_id, foods[fdc_id], units.get(fdc_id, GRAM),
+             *("" if limit is None else f"{limit:g}" for limit in limits.get(fdc_id, (None, None)))]
+            for fdc_id in pool
+        ]),
+    )
+
+
+def parse_pool_answer(text, foods):
+    """Strictly validates the foods an LLM proposes for the pool, foods ({fdc_id: description}) being the real ones,
+    and returns the most of each one in a day, as {fdc_id: max}."""
+    claims, most = [], {}
+    for line, record in parse_answer(text, POOL_ANSWER_HEADER):
+        claims.append((line, record["fdc_id"], record["fdc_description"]))
+        amount = to_float(record["max"], f"max at row {line}")
+        if amount <= 0:
+            raise ValueError(f"Invalid max {amount} at row {line}: it is the most of the food in a day.")
+        if record["fdc_id"].isdigit():
+            most[int(record["fdc_id"])] = amount
+    check_food_ids(claims, foods)
+    return most
 
 
 # ---------------------------------------------------------
