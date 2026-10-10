@@ -33,12 +33,24 @@ if __name__ == "__main__":
         check_menu_foods(rows)
 
     # 2. A food that the menu already had keeps its ID: only the new ones are left to identify at step 2.0
-    if MENU_FILE.exists():
-        known = {(normalize(description), unit): fdc_id for fdc_id, description, _, unit in load_menu()}
-        for row in rows:
-            row[0] = row[0] or known.get((normalize(row[1]), row[3]), "")
+    before = load_menu() if MENU_FILE.exists() else []
+    known = {(normalize(description), unit): fdc_id for fdc_id, description, _, unit in before}
+    for row in rows:
+        row[0] = row[0] or known.get((normalize(row[1]), row[3]), "")
 
-    # 3. Save the menu (the next steps read it from there), then ask whether it is right
+    # 3. The same foods and amounts as the menu, which is identified: only its text was written again, as step 6.0
+    # asks after it computed the amounts. The report already judged these amounts: there is nothing to check
+    def foods(menu):
+        return sorted((normalize(description), float(amount), unit) for _, description, amount, unit in menu)
+
+    if foods(rows) == foods(before) and all(row[0].isdigit() for row in before):
+        save_menu_description(description)
+        raise SystemExit(
+            f"The csv is {MENU_FILE.name} as it is, whose foods are all identified: only the text of the menu is saved. "
+            "Go on with 6.0_get_report."
+        )
+
+    # 4. Save the menu (the next steps read it from there), then ask whether it is right
     save_menu(rows)
     save_menu_description(description)
     set_clipboard(

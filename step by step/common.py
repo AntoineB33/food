@@ -33,6 +33,9 @@ NEW_FOOD_FILE = DB_DIR / "new_food.csv"
 MENU_FILE = DB_DIR / "menu.csv"
 # The menu as a text, meal by meal: menu.csv is written from it
 MENU_DESCRIPTION_FILE = DB_DIR / "menu_description.txt"
+# The menu with the amounts this text has, while menu.csv has others that step 6.0 computed and the text is not
+# written again yet: a menu is not saved as successful with a text that is not its own. Not in git
+MENU_TEXT_AMOUNT_FILE = DB_DIR / "menu_text_amounts.csv"
 SUCCESSFUL_MENU_FILE = DB_DIR / "successful_menus.csv"
 # The text of each menu of successful_menus.csv, in a file named after its number
 SUCCESSFUL_MENU_DESCRIPTION_DIR = DB_DIR / "successful_menu_descriptions"
@@ -45,6 +48,9 @@ MENU_PRODUCT_FILE = DB_DIR / "menu_product.csv"
 MENU_OPTION_FILE = DB_DIR / "menu_options.json"
 # The goals and tips of the user, a free text: a menu is made, corrected and judged with them
 MENU_TIPS_FILE = DB_DIR / "menu_tips.txt"
+# The least and the most of a food that is realistic and safe in a day, for the foods an LLM refused an amount of:
+# the amounts that step 6.0 computes stay within them, in every menu
+FOOD_LIMIT_FILE = DB_DIR / "food_limit.csv"
 # What was printed, the prompts and the answers of the LLM, in one file per menu made with 0_run_all. The prompts
 # tell the address of the user: not in git
 HISTORY_DIR = DB_DIR / "history"
@@ -80,7 +86,16 @@ PRODUCT_ANSWER_HEADER = ["fdc_id", "product", "shop", "price", "package_amount",
 PRODUCT_NUTRIENT_ANSWER_HEADER = ["product", "nutrient_id", "amount", "source"]
 ON_SITE = "on site"
 # What an answer to the prompt of the report corrects (see answer_kind)
-MENU_ANSWER, PRODUCT_ANSWER = "menu", "products"
+MENU_ANSWER, PRODUCT_ANSWER, LIMIT_ANSWER = "menu", "products", "limits"
+# min, max: in the unit of the food, for a day, empty without limit
+FOOD_LIMIT_HEADER = ["fdc_id", "description", "min", "max"]
+# How the LLM writes the limits of the foods it refuses the amount of
+LIMIT_ANSWER_HEADER = ["description", "min", "max"]
+LIMIT_NOTE = f"""as a text easy to copy in a csv format with those columns:
+{",".join(f'"{col}"' for col in LIMIT_ANSWER_HEADER)}
+- description: the one of the food in the table of the menu, unchanged.
+- min, max: the least and the most of this food that is realistic and safe to have in a day, in the unit of its row, one of the two being empty when there is no limit on that side.
+- The amounts are computed again within them: give the widest limits you accept, not the amount you prefer."""
 ECO_LEVELS = "ABCDE"
 # The menu counts on a food for a nutrient when it brings at least this share of its total of the day: with less,
 # the product bought changes little
@@ -903,6 +918,26 @@ def load_menu_description():
 
 def save_menu_description(description):
     MENU_DESCRIPTION_FILE.write_text(description, encoding="utf-8")
+    # The text is the one of the menu again
+    MENU_TEXT_AMOUNT_FILE.unlink(missing_ok=True)
+
+
+def load_menu_text_amounts(rows):
+    """Returns the menu (see load_menu) with the amounts its text has, when step 6.0 computed the ones of rows since
+    and the text was not written again. None when the text has the amounts of rows."""
+    if not MENU_TEXT_AMOUNT_FILE.exists():
+        return None
+    header, written = read_csv(MENU_TEXT_AMOUNT_FILE)
+    check_header(header, MENU_HEADER, MENU_TEXT_AMOUNT_FILE)
+    # Only the amounts may differ
+    same = [row[:2] + row[3:] for row in written] == [row[:2] + row[3:] for row in rows]
+    return written if same else None
+
+
+def save_menu_text_amounts(rows):
+    """Keeps the menu (see load_menu) as its text describes it, before menu.csv gets amounts that step 6.0 computed."""
+    if not MENU_TEXT_AMOUNT_FILE.exists():
+        write_csv(MENU_TEXT_AMOUNT_FILE, MENU_HEADER, rows)
 
 
 def menu_description_block(description):
@@ -1239,6 +1274,94 @@ def daily_need_block(changes=None):
 
 
 # ---------------------------------------------------------
+# Limits of the foods
+# ---------------------------------------------------------
+def load_food_limits():
+    """Returns the least and the most of the foods that are accepted in a day, as {fdc_id: (min, max)}, None being
+    no limit."""
+    if not FOOD_LIMIT_FILE.exists():
+        return {}
+    header, rows = read_csv(FOOD_LIMIT_FILE)
+    check_header(header, FOOD_LIMIT_HEADER, FOOD_LIMIT_FILE)
+    limits = {}
+    for line, row in enumerate(rows, start=2):
+        if len(row) != len(header):
+            raise ValueError(f"Malformed row {line} in {FOOD_LIMIT_FILE}: {row}")
+        where = f"row {line} of {FOOD_LIMIT_FILE}"
+        limits[to_int(row[0], f"fdc_id at {where}")] = (
+            to_float(row[2], f"min at {where}") if row[2] else None,
+            to_float(row[3], f"max at {where}") if row[3] else None,
+        )
+    return limits
+
+
+def save_food_limits(limits):
+    """Adds limits (see load_food_limits) to food_limit.csv, replacing the ones the same foods had."""
+    foods = load_all_foods()
+    limits = load_food_limits() | limits
+    write_csv(FOOD_LIMIT_FILE, FOOD_LIMIT_HEADER, [
+        [fdc_id, foods.get(fdc_id, ""), *("" if limit is None else f"{limit:g}" for limit in of_food)]
+        for fdc_id, of_food in limits.items()
+    ])
+
+
+def limit_text(low, high, unit):
+    """Says a limit of a food (see load_food_limits)."""
+    parts = [f"{what} {limit:g} {unit}" for what, limit in (("at least", low), ("at most", high)) if limit is not None]
+    return " and ".join(parts)
+
+
+def within_limits(amount, limit):
+    """Returns the amount of a food brought back within its limit (min, max), None being no limit."""
+    low, high = limit
+    if low is not None and amount < low:
+        return low
+    if high is not None and amount > high:
+        return high
+    return amount
+
+
+def food_limit_block(fdc_ids=None):
+    """Formats the limits of those foods for a prompt, all of them without any, nothing when there is none."""
+    foods = load_all_foods()
+    units = load_food_units()
+    rows = [
+        [fdc_id, foods.get(fdc_id, ""), units.get(fdc_id, GRAM), *("" if limit is None else f"{limit:g}" for limit in of_food)]
+        for fdc_id, of_food in load_food_limits().items() if fdc_ids is None or fdc_id in fdc_ids
+    ]
+    if not rows:
+        return ""
+    return file_block(
+        f"{FOOD_LIMIT_FILE.name} (the least and the most of those foods that I accept in a day, an empty one meaning no limit)",
+        rows_to_csv(["fdc_id", "fdc_description", "unit", "min", "max"], rows),
+    )
+
+
+def parse_limit_answer(text, menu):
+    """Strictly validates the limits of an LLM answer, which are for foods of the menu (see load_menu), and returns
+    them (see load_food_limits)."""
+    csv_text = extract_table(text, LIMIT_ANSWER_HEADER)
+    if csv_text is None:
+        raise ValueError(f"No csv with the columns {LIMIT_ANSWER_HEADER} found in the clipboard.")
+    ids = {normalize(description): int(fdc_id) for fdc_id, description, _, _ in menu if fdc_id.isdigit()}
+    limits = {}
+    for line, record in parse_answer(csv_text, LIMIT_ANSWER_HEADER):
+        if normalize(record["description"]) not in ids:
+            raise ValueError(
+                f"'{record['description']}' (row {line}) is not a food of the menu: write its description exactly as "
+                "in the table of the menu."
+            )
+        low = to_float(record["min"], f"min at row {line}") if record["min"] else None
+        high = to_float(record["max"], f"max at row {line}") if record["max"] else None
+        if low is None and high is None:
+            raise ValueError(f"'{record['description']}' (row {line}) has neither min nor max.")
+        if (low is not None and low < 0) or (high is not None and high < (low or 0)):
+            raise ValueError(f"Invalid limits at row {line}: the min cannot be negative, and the max cannot be under the min.")
+        limits[ids[normalize(record["description"])]] = (low, high)
+    return limits
+
+
+# ---------------------------------------------------------
 # Products
 # ---------------------------------------------------------
 def load_products():
@@ -1490,9 +1613,12 @@ def extract_table(text, required):
 
 
 def answer_kind(text):
-    """Tells what an LLM answer to the report corrects: MENU_ANSWER or PRODUCT_ANSWER, None when it holds no csv of them."""
+    """Tells what an LLM answer to the report holds: MENU_ANSWER, LIMIT_ANSWER or PRODUCT_ANSWER, None when it holds
+    no csv of them."""
     if extract_table(text, MENU_ANSWER_HEADER) is not None:
         return MENU_ANSWER
+    if extract_table(text, LIMIT_ANSWER_HEADER) is not None:
+        return LIMIT_ANSWER
     if any(extract_table(text, header) is not None for header in (PRODUCT_ANSWER_HEADER, PRODUCT_NUTRIENT_ANSWER_HEADER)):
         return PRODUCT_ANSWER
     return None

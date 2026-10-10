@@ -21,6 +21,8 @@ Write a text easy to copy in a csv format with those columns:
 - The rows of the menu that already have an fdc_id were checked: keep it."""
 
 if __name__ == "__main__":
-    # The menu saved at step 1.5
+    # The menu saved at step 1.5. A menu whose amounts or text alone were corrected has no food to identify
+    if all(row[0].isdigit() for row in load_menu()):
+        raise SystemExit("Every food of the menu is already identified: go on with 3.0_get_ingr_prompt.")
     set_clipboard(f"{menu_block(load_menu(), load_all_foods())}\n\n{food_manual_block()}\n\n{PROMPT}")
     print("Paste it in a new discussion, copy the csv of the foods, then run 2.5_copy_foods_then_check.")

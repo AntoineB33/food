@@ -8,6 +8,8 @@ from scipy.optimize import Bounds, LinearConstraint, milp
 from common import (
     DEPENDENCE_NOTE,
     DOSE,
+    FOOD_LIMIT_FILE,
+    LIMIT_NOTE,
     MENU_ANSWER_HEADER,
     MENU_NOTE,
     MENU_OPTION_KEEP_INTRO,
@@ -20,12 +22,15 @@ from common import (
     daily_need_block,
     dependence_block,
     file_block,
+    food_limit_block,
     load_all_foods,
     load_daily_needs,
+    load_food_limits,
     load_food_nutrients,
     load_identified_menu,
     load_menu,
     load_menu_description,
+    load_menu_text_amounts,
     load_nutrients,
     load_product_nutrients,
     load_products,
@@ -41,8 +46,10 @@ from common import (
     rows_to_csv,
     save_menu,
     save_menu_products,
+    save_menu_text_amounts,
     save_successful_menu,
     set_clipboard,
+    within_limits,
 )
 
 INTRO = """Above is my vegan menu for a day, fdc_description being the generic food of SR Legacy 2018 or of my own foods that each row is, and product the real product I buy for it, when I have one. A food is counted with the nutrients given for its product, or else with those of its generic food. The report compares the total of the day with daily_need_table.csv."""
@@ -69,16 +76,27 @@ MARGIN = 1e-6
 # satisfy the needs, the closest ones to the needs are looked for before the closest ones to the menu
 OUT_COST = 1000
 
-AMOUNT_PROMPT = f"""Above is my vegan menu for a day, as a text then as a table. The amounts of the table were just computed so that the total of the day is between min and max for each of my daily nutrient needs: do not change them. The text still tells the amounts of before. These amounts changed:
+# The LLM judges the amounts the script computed before it writes the text of the menu with them: an amount it
+# refuses comes back as a limit of its food, within which the amounts are computed again
+AMOUNT_PROMPT = f"""Above is my vegan menu for a day, as a text then as a table. The amounts of the table were just computed so that the total of the day is between min and max for each of my daily nutrient needs. The text still tells the amounts of before. These amounts changed:
 {{changes}}
-Write the menu again as a text with the amounts of the table, each one spread over the meals as the text spreads it now. If an amount is not realistic to eat in a day, say so in one sentence before the text, without changing it. Then write the table again as a csv, with the description, the amount and the unit of every food unchanged.
-{MENU_NOTE}"""
+Is each amount of the table realistic and safe to have every day? Judge the amounts only, not the choice of the foods.{{limits}}
+If they all are, write the menu again as a text with the amounts of the table, each one spread over the meals as the text spreads it now, then the table again as a csv, with the description, the amount and the unit of every food unchanged: do not change any amount.
+{MENU_NOTE}
+If some are not, do not write the menu. Say why in a few sentences, then write the limits of the foods at fault only, {LIMIT_NOTE}"""
+# Told when a food of the menu already has limits
+AMOUNT_LIMIT_NOTE = " The amounts are within food_limit.csv, the limits that were already given: only give a limit of those foods again to change it."
+# Told by the prompt that corrects the menu when some foods have limits, then when amounts of the menu were out of them
+LIMIT_KEEP_NOTE = "food_limit.csv gives the least and the most of some foods that I accept in a day: what you correct must stay within them.\n"
+LIMITED_NOTE = "The table of the menu and the report have those amounts brought back within food_limit.csv, the text of the menu still having the ones of before: {changes}.\n"
 
 
-def correction_prompt(with_values, still=None):
+def correction_prompt(with_values, still=None, limited=None):
     """Returns the prompt that makes the LLM correct what is wrong, with the numbers to check when there are some.
 
     still are the names of the needs that no amounts of the foods of the menu satisfy, None when it was not looked for.
+    limited are the lines that tell the amounts that were brought back within the limits of their food, empty
+    without any, None when no food has a limit.
     """
     corrections = [PRODUCTS_CORRECTION, MENU_CORRECTION]
     if with_values:
@@ -89,6 +107,10 @@ def correction_prompt(with_values, still=None):
         f"and these needs are still out of their range with them: {', '.join(still)}. A product or a food must change "
         "for those ones, the other ones being fixed by amounts as these.\n"
     )
+    if limited is not None:
+        amounts_note += LIMIT_KEEP_NOTE
+    if limited:
+        amounts_note += LIMITED_NOTE.format(changes="; ".join(line.lstrip("- ") for line in limited))
     return (
         f"{INTRO}\n{DEPENDENCE_NOTE} It only has the nutrients in lack or in excess.\n{amounts_note}"
         f"Fix these lacks and excesses with the first of the {len(corrections)} corrections below that can fix them. "
@@ -165,13 +187,14 @@ def amount_step(amount, unit):
     return 5 if amount >= 100 else 1 if amount >= 10 else 0.5 if amount >= 2 else 0.1
 
 
-def solve_amounts(menu, nutrient_db, daily_needs, margin=MARGIN, strict=True):
+def solve_amounts(menu, nutrient_db, daily_needs, limits, margin=MARGIN, strict=True):
     """Returns the amounts of the foods of the menu (a list of (fdc_id, amount, unit)) the closest to its own that
     satisfy the daily needs, None when no amounts do.
 
-    A food keeps between its amount divided by RANGE and multiplied by it, a supplement at least one dose. The
-    closest amounts are the ones whose changes, each one as a share of the amount, have the smallest sum: few foods
-    change. Without strict, the needs that no amounts satisfy are left out of their range, by as little as possible.
+    A food keeps between its amount divided by RANGE and multiplied by it, a supplement at least one dose, and
+    within its limits ({fdc_id: (min, max)}) when it has some. The closest amounts are the ones whose changes, each
+    one as a share of the amount, have the smallest sum: few foods change. Without strict, the needs that no amounts
+    satisfy are left out of their range, by as little as possible.
     """
     # As in the report, a nutrient that half of the foods have no data for cannot be judged
     needs = [
@@ -214,12 +237,22 @@ def solve_amounts(menu, nutrient_db, daily_needs, margin=MARGIN, strict=True):
             upper.append(sign)
 
     cost = np.concatenate([np.zeros(foods), np.ones(foods), np.full(2 * kept, OUT_COST)])
-    least = [max(1, amount / RANGE) if unit == DOSE else amount / RANGE for _, amount, unit in menu]
+    least, most = [], []
+    for fdc_id, amount, unit in menu:
+        low, high = max(1, amount / RANGE) if unit == DOSE else amount / RANGE, amount * RANGE
+        # The limits of a food come before the amount of the menu, which may be out of them
+        limit_low, limit_high = limits.get(fdc_id, (None, None))
+        if limit_high is not None:
+            low, high = min(low, limit_high), min(high, limit_high)
+        if limit_low is not None:
+            low, high = max(low, limit_low), max(high, limit_low)
+        least.append(low)
+        most.append(high)
+    most = np.floor(np.array(most) / steps + 1e-9)
     bounds = Bounds(
-        np.concatenate([np.ceil(np.array(least) / steps - 1e-9), np.zeros(foods + 2 * kept)]),
-        np.concatenate([
-            np.floor(amounts * RANGE / steps + 1e-9), np.full(foods, np.inf), np.full(2 * kept, 0 if strict else np.inf),
-        ]),
+        # A max that is not a whole number of steps comes before the min
+        np.concatenate([np.minimum(np.ceil(np.array(least) / steps - 1e-9), most), np.zeros(foods + 2 * kept)]),
+        np.concatenate([most, np.full(foods, np.inf), np.full(2 * kept, 0 if strict else np.inf)]),
     )
     result = milp(
         cost, constraints=LinearConstraint(np.array(rows), lower, upper), bounds=bounds,
@@ -230,19 +263,20 @@ def solve_amounts(menu, nutrient_db, daily_needs, margin=MARGIN, strict=True):
     return [round(float(count) * float(step), 1) for count, step in zip(np.round(result.x[:foods]), steps)]
 
 
-def closest_amounts(menu, nutrient_db, daily_needs):
+def closest_amounts(menu, nutrient_db, daily_needs, limits):
     """Returns the amounts of the foods of the menu (a list of (fdc_id, amount, unit)) the closest to its own that
-    satisfy the daily needs, and True. When no amounts do, the ones that come the closest to the needs, and False."""
+    satisfy the daily needs within the limits of the foods ({fdc_id: (min, max)}), and True. When no amounts do, the
+    ones that come the closest to the needs, and False."""
     def satisfies(amounts):
         changed = [(fdc_id, amount, unit) for (fdc_id, _, unit), amount in zip(menu, amounts)]
         return not build_report(changed, nutrient_db, daily_needs)[1]
 
     # A total that no amount changes may be just on its min or its max: it is then aimed at them, not inside them
     for margin in (MARGIN, 0):
-        amounts = solve_amounts(menu, nutrient_db, daily_needs, margin)
+        amounts = solve_amounts(menu, nutrient_db, daily_needs, limits, margin)
         if amounts and satisfies(amounts):
             return amounts, True
-    amounts = solve_amounts(menu, nutrient_db, daily_needs, strict=False)
+    amounts = solve_amounts(menu, nutrient_db, daily_needs, limits, strict=False)
     return amounts, bool(amounts) and satisfies(amounts)
 
 
@@ -287,6 +321,20 @@ if __name__ == "__main__":
     choices = choose_menu_products(fdc_ids)
     nutrient_db, sources = product_nutrient_db(generic_db, choices)
 
+    # An amount that is out of the limits of its food is brought back within them: the menu is judged this way.
+    # saved is the menu as menu.csv has it
+    limits = load_food_limits()
+    saved = [row[:] for row in rows]
+    menu = [(fdc_id, within_limits(amount, limits.get(fdc_id, (None, None))), unit) for fdc_id, amount, unit in menu]
+    for row, (_, amount, _) in zip(rows, menu):
+        row[2] = f"{amount:g}"
+    limited = amount_changes(saved, [amount for _, amount, _ in menu])
+    if limited:
+        print(f"\nThose amounts are out of the limits of {FOOD_LIMIT_FILE.name}: the menu is judged with them brought back within.")
+        print("\n".join(limited))
+    # The menu as its text describes it: this step may have computed the amounts of menu.csv since
+    written = load_menu_text_amounts(saved) or saved
+
     # 2. Compare the total of the day with the daily needs
     daily_needs = load_daily_needs()
     report, failing = build_report(menu, nutrient_db, daily_needs)
@@ -311,16 +359,25 @@ if __name__ == "__main__":
         print(price)
 
     # 4. Other amounts of the same foods may be enough: there is then no food nor product to look for
-    amounts, solved = closest_amounts(menu, nutrient_db, daily_needs) if failing else (None, False)
-    changes = amount_changes(rows, amounts) if solved else []
-    if changes:
+    if failing:
+        amounts, solved = closest_amounts(menu, nutrient_db, daily_needs, limits)
+    else:
+        # The amounts as they are, brought back within the limits, are enough
+        amounts, solved = [amount for _, amount, _ in menu], True
+    # The amounts that the text of the menu does not have
+    changes = amount_changes(written, amounts) if solved else []
+    if changes and failing:
         print(
-            f"\nThe report above is the menu as it is: {len(failing)} of the daily needs are not satisfied. Changing only "
+            f"\nThe report above is the menu {'with those amounts' if limited else 'as it is'}: {len(failing)} of the daily "
+            "needs are not satisfied. Changing only "
             f"the amounts of {len(changes)} of its {len(rows)} foods, as below, satisfies them all:"
         )
         print("\n".join(changes))
+    elif changes:
+        print("\nThe menu satisfies the daily needs with these amounts, which its text does not have yet:")
+        print("\n".join(changes))
 
-    if not failing:
+    if not failing and not changes:
         print("No nutrition lacks or excesses found. The menu satisfies the daily needs!")
         save_successful_menu(rows, date.today().isoformat(), choices)
         # The totals do not tell everything: the LLM looks for what is wrong in the way the menu is eaten
@@ -328,21 +385,33 @@ if __name__ == "__main__":
         set_clipboard(review_prompt(load_menu_description(), rows, choices, notes), review=True)
         print("Paste it in a new discussion: it asks whether the menu has risks or problems that the totals do not show.")
         print("If the LLM writes a corrected menu, copy its whole answer and run 1.5_copy_menu_then_check. If it finds none, it is finished.")
-    elif changes and ask_yes_no("Take these amounts (n: ask the LLM to correct the menu instead)", True):
+    # Amounts that are only brought back within the limits are not a choice
+    elif changes and (not failing or ask_yes_no("Take these amounts (n: ask the LLM to correct the menu instead)", True)):
         for row, amount in zip(rows, amounts):
             row[2] = f"{amount:g}"
-        save_menu(rows)
-        # The text of the menu still has the amounts of before: the LLM writes it again
+        # Until the LLM writes the text again, it is the one of the amounts of before
+        save_menu_text_amounts(written)
+        if rows != saved:
+            save_menu(rows)
+        # The LLM says whether the amounts are realistic. The text of the menu still has the amounts of before: it
+        # writes it again when they are
         description = load_menu_description()
         blocks = [menu_description_block(description)] if description else []
-        blocks += [menu_block(rows), AMOUNT_PROMPT.format(changes="\n".join(changes))]
+        blocks.append(menu_block(rows))
+        of_menu = food_limit_block(set(fdc_ids))
+        if of_menu:
+            blocks.append(of_menu)
+        blocks.append(AMOUNT_PROMPT.format(changes="\n".join(changes), limits=AMOUNT_LIMIT_NOTE if of_menu else ""))
         set_clipboard("\n\n".join(blocks))
-        print("Paste it in a new discussion: it asks for the text of the menu with the new amounts.")
-        print("Copy the whole answer and run 1.5_copy_menu_then_check to save it, then go on from 2.0_get_food_prompt: no food is new.")
+        print("Paste it in a new discussion: it asks whether these amounts are realistic, and copy the whole answer.")
+        print("If the LLM wrote the menu again, run 1.5_copy_menu_then_check: it only saves the text, then run this step again.")
+        print("If it wrote limits, run 6.5_copy_limits, then this step again: it computes the amounts within them.")
     else:
         # 5. The LLM corrects what is wrong, among the numbers of the products, the products and the menu
         values = unread_values(rows, choices, sources, failing)
         blocks = [daily_need_block()]
+        if limits:
+            blocks.append(food_limit_block())
         if menu_tips_block():
             blocks.append(menu_tips_block())
         # A menu saved before the text was asked has none
@@ -369,7 +438,10 @@ if __name__ == "__main__":
                 "menu_closest_amounts.csv (the amounts of the same foods that come the closest to the daily needs)",
                 rows_to_csv(MENU_ANSWER_HEADER, [[row[1], f"{new:g}", row[3]] for row, new in zip(rows, closest)]),
             ))
-        blocks += [dependence_block(rows, nutrient_db, failing), correction_prompt(bool(values), still)]
+        blocks += [
+            dependence_block(rows, nutrient_db, failing),
+            correction_prompt(bool(values), still, limited if limits else None),
+        ]
         set_clipboard("\n\n".join(blocks))
         print("Paste it in a new discussion, and copy the whole answer.")
         print("If the LLM corrected products, run 5.5_copy_products, then this step again.")

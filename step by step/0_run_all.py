@@ -32,10 +32,14 @@ STEPS = [
     ("5.0", "5.0_get_product_prompt", PROMPT, "the whole answer (the csv of the products, then the csv of their nutrients)"),
     ("5.5", "5.5_copy_products", SAVE, "the whole answer (the csv of the products, then the csv of their nutrients)"),
     ("6.0", "6.0_get_report", PROMPT, "the whole answer (the corrected menu as a text, then its csv)"),
+    ("6.5", "6.5_copy_limits", SAVE, "the whole answer (the csv of the limits of the foods)"),
 ]
 NUMBERS = [number for number, _, _, _ in STEPS]
 # The products of the foods of the menu are asked, then saved, before the report
 PRODUCT_PROMPT, PRODUCTS, REPORT = NUMBERS.index("5.0"), NUMBERS.index("5.5"), NUMBERS.index("6.0")
+NEW_FOODS = NUMBERS.index("3.0")
+# The limits of the foods whose computed amount the LLM refuses are saved, then the report is run again
+LIMITS = NUMBERS.index("6.5")
 # Where the corrected menu of the report goes
 AFTER_REPORT = NUMBERS.index("1.5")
 
@@ -221,8 +225,9 @@ def ask_what_next(current, result, prompt):
         following = current
         answer = ask(f"Fix it, then press Enter to run {number} again", prompt, signs=(FIX, f"{ENTER} runs {number} again"))
     elif result == NOTHING_TO_DO:
-        # No new food: the products are next. No food without product: the report is
-        following = REPORT if current == PRODUCT_PROMPT else PRODUCT_PROMPT
+        # No food to identify: the new foods are next. No new food: the products are. No food without product, or
+        # a menu whose text alone was written again: the report is
+        following = {AFTER_REPORT: REPORT, NUMBERS.index("2.0"): NEW_FOODS, PRODUCT_PROMPT: REPORT}.get(current, PRODUCT_PROMPT)
         answer = ask(f"Press Enter to run {NUMBERS[following]}", prompt, signs=(f"{ENTER} runs {NUMBERS[following]}",))
     elif current == PRODUCT_PROMPT:
         answer = ask(
@@ -238,6 +243,9 @@ def ask_what_next(current, result, prompt):
             "still have no product",
             signs=(f"{ENTER} runs {NUMBERS[following]}", f"{NUMBERS[PRODUCT_PROMPT]} asks the products still missing"),
         )
+    elif current == LIMITS:
+        following = REPORT
+        answer = ask(f"Press Enter to run {NUMBERS[following]}", signs=(f"{ENTER} runs {NUMBERS[following]}",))
     elif result == REVIEW:
         following = AFTER_REPORT
         while True:
@@ -263,19 +271,24 @@ def ask_what_next(current, result, prompt):
             signs=(f"{FINISHED} q quits", f"{ENTER} starts a new menu at {NUMBERS[following]}"),
         )
     elif current == REPORT:
-        # The LLM corrects the products or the menu: what its answer holds tells which script reads it
+        # The LLM corrects the products or the menu, or gives limits to the amounts that were computed: what its
+        # answer holds tells which script reads it
         while True:
             answer = ask(
                 f"Paste the prompt in a new discussion, copy the whole answer of the LLM, then press Enter: it runs "
-                f"{NUMBERS[PRODUCTS]} when the LLM corrected products, {NUMBERS[AFTER_REPORT]} when it corrected the menu",
+                f"{NUMBERS[PRODUCTS]} when the LLM corrected products, {NUMBERS[AFTER_REPORT]} when it wrote the menu, "
+                f"{NUMBERS[LIMITS]} when it wrote limits of foods",
                 prompt,
-                signs=(NEW_CHAT, what, f"{ENTER} runs {NUMBERS[PRODUCTS]} (products) or {NUMBERS[AFTER_REPORT]} (menu)"),
+                signs=(
+                    NEW_CHAT, what,
+                    f"{ENTER} runs {NUMBERS[AFTER_REPORT]} (menu), {NUMBERS[PRODUCTS]} (products) or {NUMBERS[LIMITS]} (limits)",
+                ),
             )
             answered = None if holds_prompt(prompt) else common.answer_kind(pyperclip.paste())
             if answer or answered:
                 break
-            print("The clipboard holds neither the csv of a menu nor the csv of products: copy the whole answer of the LLM first.")
-        following = AFTER_REPORT if answered == common.MENU_ANSWER else PRODUCTS
+            print("The clipboard holds no csv of a menu, of products nor of limits: copy the whole answer of the LLM first.")
+        following = {common.MENU_ANSWER: AFTER_REPORT, common.LIMIT_ANSWER: LIMITS}.get(answered, PRODUCTS)
     elif kind == CHECK:
         while True:
             answer = ask(

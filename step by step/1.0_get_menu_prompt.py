@@ -3,6 +3,7 @@ from common import (
     MENU_NOTE,
     ask_menu_options,
     daily_need_block,
+    food_limit_block,
     food_manual_block,
     load_manual_foods,
     menu_food_note,
@@ -18,6 +19,9 @@ FOOD_MANUAL_NOTE = f"""food_manual.csv lists the foods I already use that SR Leg
 # Added when the user wrote goals and tips: the review of step 6.0 judges the menu with them, so it is made with them
 TIPS_NOTE = """menu_tips.txt holds my goals and tips: the menu must follow them, the daily nutrient needs coming first."""
 
+# Added when some foods have limits: step 6.0 brings the amounts of a menu back within them
+LIMIT_NOTE = """food_limit.csv gives the least and the most of some foods that I accept in a day: the menu must stay within them."""
+
 PROMPT = """Give me a vegan menu for a day that satisfies all the daily nutrient needs of the table above: the total of the day must be between min and max for each of them."""
 
 if __name__ == "__main__":
@@ -27,7 +31,9 @@ if __name__ == "__main__":
     food_note = f"{FOOD_MANUAL_NOTE}\n" if foods else ""
     tips = f"{menu_tips_block()}\n\n" if menu_tips_block() else ""
     tips_note = f"{TIPS_NOTE}\n" if tips else ""
+    limits = f"{food_limit_block()}\n\n" if food_limit_block() else ""
+    limit_note = f"{LIMIT_NOTE}\n" if limits else ""
     set_clipboard(
-        f"{daily_need_block()}\n\n{tips}{foods}{PROMPT}\n{food_note}{tips_note}{menu_food_note()}{menu_option_note()}{MENU_NOTE}"
+        f"{daily_need_block()}\n\n{tips}{foods}{limits}{PROMPT}\n{food_note}{tips_note}{limit_note}{menu_food_note()}{menu_option_note()}{MENU_NOTE}"
     )
     print("Paste it in a new discussion, copy the whole answer (the menu as a text, then its csv), then run 1.5_copy_menu_then_check.")

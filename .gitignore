@@ -14,5 +14,6 @@ FoodData_Central_foundation_food_csv_2025-12-18
 *.pyc
 __pycache__
 run_state.json
+menu_text_amounts.csv
 menu_options.json
 DB/history/
