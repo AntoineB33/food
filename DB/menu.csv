@@ -1,9 +1,8 @@
 fdc_id,description,amount,unit
-173904,Rolled oats,30,g
+173904,Rolled oats,20,g
 6,Pea protein powder,75,g
 175215,"Soy milk, fortified",200,g
 172470,Peanut butter,30,g
-173944,Banana,120,g
 7,Vegan multivitamin,1,dose
 175103,Water,3200,g
 9,"Seitan, plain",120,g
@@ -14,12 +13,11 @@ fdc_id,description,amount,unit
 173468,Salt,2,g
 4,"Vitamin D3 supplement (vegan), pill",1,dose
 2,"Algae oil supplement, pill",1,dose
-10,Black tea (dry),9,g
+10,Black tea (dry),13,g
 8,Calcium supplement,1,dose
 172475,"Tofu, firm",150,g
 169736,"Pasta, white, dry",50,g
 170054,"Tomato sauce, canned",150,g
-1,Nutritional yeast,5,g
-169098,Orange juice,500,g
+169098,Orange juice,700,g
 5,"Choline supplement, pill",2,dose
 3,"Vitamin B12 supplement, pill",1,dose
