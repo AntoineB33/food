@@ -13,6 +13,7 @@ from common import (
     load_food_units,
     load_manual_foods,
     load_menu,
+    load_menu_options,
     menu_block,
     normalize,
     parse_answer,
@@ -81,6 +82,14 @@ if __name__ == "__main__":
     new = [description for fdc_id, description, _, _ in menu if fdc_id == NEW]
     if new:
         print(f"In no database: {', '.join(new)}. Step 3.0 adds them to {FOOD_MANUAL_FILE.name}.")
+    # Step 1.5 only sees a food the menu must not have when it has its exact description
+    excluded = {str(fdc_id) for fdc_id, _ in load_menu_options().get("exclude", [])}
+    for fdc_id, description, _, _ in menu:
+        if fdc_id in excluded:
+            print(
+                f"WARNING: '{description}' is the food {fdc_id} ({foods[int(fdc_id)]}), which the menu must not have. "
+                "Tell it to the LLM that wrote the menu, copy its whole answer, then run 1.5_copy_menu_then_check."
+            )
 
     # 3. Ask whether it is right
     set_clipboard(f"{menu_block(menu, foods)}\n\n{food_manual_block()}\n\n{CHECK_PROMPT}")

@@ -26,6 +26,7 @@ from common import (
     load_products,
     menu_block,
     menu_description_block,
+    menu_food_note,
     menu_option_note,
     normalize,
     product_block,
@@ -45,7 +46,7 @@ VALUES_CORRECTION = f"""Check the numbers of product_values.csv with your web se
 PRODUCTS_CORRECTION = f"""Without changing the foods of the menu nor their amounts, find other real products for some of them that fix these lacks and excesses without creating new ones: a product that is fortified or not, set with calcium or not, a supplement with another dose, ... Use your web search tool for the products, their prices and the shops. Never invent a product, a price or what a label says. If some products do, write only them.
 {menu_option_note("The menu was made with these wishes, follow them in the products you choose:")}{PRODUCT_NOTE}"""
 MENU_CORRECTION = f"""Correct the menu itself to fix these lacks and excesses, without creating new ones.
-{menu_option_note(MENU_OPTION_KEEP_INTRO)}{MENU_NOTE}
+{menu_food_note()}{menu_option_note(MENU_OPTION_KEEP_INTRO)}{MENU_NOTE}
 - In the csv, keep the description of the foods you keep unchanged, even when you change their amount."""
 
 

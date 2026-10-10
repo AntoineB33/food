@@ -129,6 +129,9 @@ MENU_OPTIONS = [
 MENU_OPTION_INTRO = "The menu must also follow these wishes, the daily nutrient needs coming first:"
 # For the prompts that correct a menu: the wishes alone are no reason to change it
 MENU_OPTION_KEEP_INTRO = "The menu was made with these wishes. Do not correct it only for them, but follow them in what you change:"
+# The foods asked at step 1.0 are not wishes: a menu that does not follow them is wrong
+MENU_INCLUDE_INTRO = "The menu must have each of these foods, whatever the amount. In the csv, the row of each one has exactly this description:"
+MENU_EXCLUDE_INTRO = "The menu must have none of these foods, under any description:"
 NUTRIENT_ID_NOTE ="""When a row of daily_need_table.csv has several IDs (e.g. "1278, 1272"), the need is the sum of those nutrients: each of them must still have its own row with its single nutrient_id and its own amount. Never write a combined ID or a summed amount in the csv."""
 NUTRIENT_UNIT_NOTE = f"""The amounts are for 100g of the food when its unit is {GRAM}, for one dose when its unit is {DOSE}, in the unit of the nutrient."""
 SOURCE_NOTE = f"""the website you read it on, or estimate when it is your own knowledge. {ON_SITE} is only for what I told you I read myself on the product."""
@@ -228,7 +231,71 @@ def ask_menu_options():
     last = options.get("other", "")
     answer = input(f"  Anything else to ask for the menu? (text, - for nothing) [{last or '-'}]: ").strip()
     options["other"] = "" if answer == "-" else answer or last
+    foods = load_all_foods()
+    include, exclude = options.get("include", []), options.get("exclude", [])
+    options["include"] = ask_menu_foods("Foods the menu must have", include, exclude, foods)
+    options["exclude"] = ask_menu_foods("Foods the menu must not have", exclude, options["include"], foods)
     MENU_OPTION_FILE.write_text(json.dumps(options, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def ask_menu_foods(question, kept, opposite, foods):
+    """Asks the foods the menu must have, or must not have, and returns them as a list of [fdc_id, description].
+
+    kept are the ones answered last, which stay unless the user removes them all. A food is typed as its fdc_id
+    then its description, which must be the one of this ID in foods ({fdc_id: description}). A food that is added
+    is removed from opposite, the other list.
+    """
+    # A manual food may have been removed or renamed since
+    chosen = [
+        [fdc_id, description] for fdc_id, description in kept
+        if normalize(foods.get(fdc_id, "")) == normalize(description)
+    ]
+    print(f"  {question}: {'; '.join(f'{description} ({fdc_id})' for fdc_id, description in chosen) or 'none'}")
+    while True:
+        answer = input("    Add one, as its fdc_id then its description (Enter when done, - to remove them all): ").strip()
+        if not answer:
+            return chosen
+        if answer == "-":
+            chosen.clear()
+            print("    None anymore.")
+            continue
+        match = re.fullmatch(r"(\d+)[\s,;:]+(.+)", answer)
+        if not match:
+            print("    Write the fdc_id, then the description, as in: 172430 Peanuts, all types, raw")
+            continue
+        fdc_id, description = int(match[1]), match[2].strip().strip('"')
+        if fdc_id not in foods:
+            error = f"The fdc_id {fdc_id} exists neither in SR Legacy 2018 nor in {FOOD_MANUAL_FILE.name}."
+        elif normalize(description) != normalize(foods[fdc_id]):
+            error = f'The fdc_id {fdc_id} is "{foods[fdc_id]}", not "{description}".'
+        else:
+            if all(fdc_id != chosen_id for chosen_id, _ in chosen):
+                chosen.append([fdc_id, foods[fdc_id]])
+            if any(fdc_id == other_id for other_id, _ in opposite):
+                opposite[:] = [food for food in opposite if food[0] != fdc_id]
+                print("    It is removed from the other list.")
+            print(f"    Added: {foods[fdc_id]}")
+            continue
+        print(f"    {error} Not added. The closest foods to this description:")
+        closest = food_candidates([description], foods)[description]
+        print("\n".join(f"      {found_id} {found}" for found_id, found in closest) or "      nothing found")
+
+
+def menu_food_note():
+    """Returns the lines of a prompt that tell the foods the menu must have and must not have, nothing without any."""
+    options = load_menu_options()
+    units = load_food_units()
+    lines = []
+    if options.get("include"):
+        lines.append(MENU_INCLUDE_INTRO)
+        lines += [
+            f'- "{description}"' + (f" (a supplement: its amount is in {DOSE})" if units.get(fdc_id) == DOSE else "")
+            for fdc_id, description in options["include"]
+        ]
+    if options.get("exclude"):
+        lines.append(MENU_EXCLUDE_INTRO)
+        lines += [f'- "{description}"' for _, description in options["exclude"]]
+    return "".join(f"{line}\n" for line in lines)
 
 
 def chosen_menu_options():
@@ -710,6 +777,32 @@ def parse_menu_csv(text):
             raise ValueError(f"Invalid unit '{record['unit']}' at row {line}: it must be {GRAM} or {DOSE}.")
         rows.append(["", description, f"{amount:g}", unit])
     return rows
+
+
+def check_menu_foods(rows):
+    """Raises if the menu (see load_menu) lacks a food it must have, or has a food it must not have (step 1.0).
+
+    A food it must have is written with the description of its ID: its row gets this ID.
+    """
+    options = load_menu_options()
+    units = load_food_units()
+    by_description = {normalize(row[1]): row for row in rows}
+    errors = []
+    for fdc_id, description in options.get("include", []):
+        row = by_description.get(normalize(description))
+        unit = units.get(fdc_id, GRAM)
+        if row is None:
+            errors.append(f'- the menu must have the food "{description}": its row of the csv must have exactly this description')
+        elif row[3] != unit:
+            errors.append(f'- the amount of "{description}" must be in {unit}, not in {row[3]}')
+        else:
+            row[0] = str(fdc_id)
+    errors += [
+        f'- the menu must not have the food "{description}", under any description'
+        for _, description in options.get("exclude", []) if normalize(description) in by_description
+    ]
+    if errors:
+        raise ValueError("The menu does not follow what I asked for its foods:\n" + "\n".join(errors))
 
 
 # ---------------------------------------------------------
