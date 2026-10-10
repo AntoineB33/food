@@ -31,6 +31,7 @@ from common import (
     normalize,
     product_block,
     product_nutrient_db,
+    review_prompt,
     rows_to_csv,
     save_menu_products,
     save_successful_menu,
@@ -182,6 +183,11 @@ if __name__ == "__main__":
     if not failing:
         print("No nutrition lacks or excesses found. The menu satisfies the daily needs!")
         save_successful_menu(rows, date.today().isoformat(), choices)
+        # The totals do not tell everything: the LLM looks for what is wrong in the way the menu is eaten
+        notes = menu_food_note() + menu_option_note(MENU_OPTION_KEEP_INTRO)
+        set_clipboard(review_prompt(load_menu_description(), rows, choices, notes), review=True)
+        print("Paste it in a new discussion: it asks whether the menu has risks or problems that the totals do not show.")
+        print("If the LLM writes a corrected menu, copy its whole answer and run 1.5_copy_menu_then_check. If it finds none, it is finished.")
     else:
         # 4. The LLM corrects what is wrong, among the numbers of the products, the products and the menu
         values = unread_values(rows, choices, sources, failing)

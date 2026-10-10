@@ -42,6 +42,8 @@ PRODUCT_NUTRIENT_FILE = DB_DIR / "product_nutrient.csv"
 MENU_PRODUCT_FILE = DB_DIR / "menu_product.csv"
 # The answers to the options of the menu, with the address of the user: not in git
 MENU_OPTION_FILE = DB_DIR / "menu_options.json"
+# The goals and tips of the user, a free text: a menu that satisfies the daily needs is judged with them
+MENU_TIPS_FILE = DB_DIR / "menu_tips.txt"
 
 # The amount of a food is in grams, its nutrients being given for 100g. A supplement taken as a pill has no
 # meaningful weight: its amount is a number of doses, its nutrients being given for one dose.
@@ -56,8 +58,9 @@ NONE = "none"
 FOOD_HEADER = ["fdc_id", "description", "unit"]
 MENU_HEADER = ["fdc_id", "description", "amount", "unit"]
 # options: the keys of the options (see MENU_OPTIONS) the menu was made with, other: its other wishes,
+# needs: the changes of the daily needs it was made with (see need_changes_cell),
 # product_id: the product the food was counted as, empty when it was counted as the generic food
-SUCCESSFUL_MENU_HEADER = ["menu", "date", *MENU_HEADER, "options", "other", "product_id"]
+SUCCESSFUL_MENU_HEADER = ["menu", "date", *MENU_HEADER, "options", "other", "needs", "product_id"]
 # How the LLM writes the menu, then the food each row of the menu is, then the ingredients and the nutrients
 MENU_ANSWER_HEADER = ["description", "amount", "unit"]
 FOOD_LIST_HEADER = ["description", "fdc_id", "fdc_description"]
@@ -176,11 +179,14 @@ def get_clipboard():
 
 # The last prompt given, for 0_run_all to copy it again
 last_prompt = None
+# Whether it is the prompt that reviews a menu that satisfies the daily needs (see review_prompt)
+last_prompt_is_review = False
 
 
-def set_clipboard(text):
-    global last_prompt
+def set_clipboard(text, review=False):
+    global last_prompt, last_prompt_is_review
     last_prompt = text
+    last_prompt_is_review = review
     pyperclip.copy(text)
     print("The new prompt has been copied to your clipboard.")
 
@@ -235,6 +241,7 @@ def ask_menu_options():
     include, exclude = options.get("include", []), options.get("exclude", [])
     options["include"] = ask_menu_foods("Foods the menu must have", include, exclude, foods)
     options["exclude"] = ask_menu_foods("Foods the menu must not have", exclude, options["include"], foods)
+    options["needs"] = ask_need_changes(options.get("needs", []))
     MENU_OPTION_FILE.write_text(json.dumps(options, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -281,6 +288,121 @@ def ask_menu_foods(question, kept, opposite, foods):
         print("\n".join(f"      {found_id} {found}" for found_id, found in closest) or "      nothing found")
 
 
+def need_change_text(need, minimum, maximum):
+    """Says what a change makes of the min and the max of a row of the daily needs (see load_daily_needs)."""
+    def limit(value):
+        return "no limit" if value is None else f"{value:g}"
+
+    parts = [
+        f"{what} {limit(old)} -> {limit(new)}"
+        for what, old, new in (("min", need["min"], minimum), ("max", need["max"], maximum)) if old != new
+    ]
+    # The table may have been changed to it since
+    return f"{need['name']} ({need['unit']}): " + (", ".join(parts) or f"min {limit(minimum)}, max {limit(maximum)}")
+
+
+def ask_need_changes(kept):
+    """Asks the changes of the rows of daily_need_table.csv, and returns them as a list of {ids, min, max, on}.
+
+    The table itself is not changed: a change replaces the min and the max of its row while it is on. kept are
+    the changes made before: each one is asked again, the last answer being the default one. A new one is typed as
+    the whole row of the csv of the table, with its new min and max.
+    """
+    # The rows as the table has them, without any change. A row without nutrient id is not computed
+    by_ids = {tuple(need["ids"]): need for need in load_daily_needs({}) if need["ids"]}
+    example = 'Write the whole row as in the csv, with its id, its name, its min and its max, as in: 1003,Protein,120,150'
+
+    print(f"  Changes of {DAILY_NEED_FILE.name}:{'' if kept else ' none'}")
+    changes = []
+    for change in kept:
+        # A row may have been removed from the table since
+        need = by_ids.get(tuple(change["ids"]))
+        if need:
+            text = need_change_text(need, change["min"], change["max"])
+            changes.append({**change, "on": ask_yes_no(f"  Change {text}", change["on"])})
+    while True:
+        answer = input(
+            "    Change a row, as the whole row of the csv with its new min and max (Enter when done, - to remove "
+            "them all): "
+        ).strip()
+        if not answer:
+            return changes
+        if answer == "-":
+            changes.clear()
+            print("    None anymore.")
+            continue
+        try:
+            cells = [cell.strip() for cell in next(csv.reader([answer]), [])]
+        except csv.Error:
+            cells = []
+        if len(cells) < 4 or not re.fullmatch(r"\d+(\s*,\s*\d+)*", cells[0]):
+            print(f"    {example}")
+            continue
+        # A name typed without its quotes is split at its commas
+        ids, name, minimum, maximum = cells[0], ", ".join(cells[1:-2]), *cells[-2:]
+        need = by_ids.get(tuple(int(nutrient_id) for nutrient_id in ids.split(",")))
+        if need is None:
+            print(f"    No row of {DAILY_NEED_FILE.name} has the id {ids}. Not changed.")
+            continue
+        if normalize(name) != normalize(need["name"]):
+            print(f'    The row {ids} is "{need["name"]}", not "{name}". Not changed.')
+            continue
+        try:
+            # As in the table, an empty min is 0 and an empty max is no limit
+            minimum = float(minimum) if minimum else 0.0
+            maximum = float(maximum) if maximum else None
+        except ValueError:
+            print("    The min and the max are numbers, the max being empty for no limit. Not changed.")
+            continue
+        if not 0 <= minimum < math.inf or (maximum is not None and not minimum <= maximum < math.inf):
+            print("    The min cannot be negative, and the max cannot be under the min. Not changed.")
+            continue
+        was_changed = any(tuple(change["ids"]) == tuple(need["ids"]) for change in changes)
+        changes[:] = [change for change in changes if tuple(change["ids"]) != tuple(need["ids"])]
+        if (minimum, maximum) == (need["min"], need["max"]):
+            print("    It is the row as the table has it." + (" Its change is removed." if was_changed else " Nothing to change."))
+            continue
+        changes.append({"ids": need["ids"], "min": minimum, "max": maximum, "on": True})
+        print(f"    Changed: {need_change_text(need, minimum, maximum)}. It will be asked again for each new menu.")
+
+
+def chosen_need_changes():
+    """Returns the changes of the daily needs chosen at step 1.0, as {nutrient ids of the row: (min, max)}."""
+    return {
+        tuple(change["ids"]): (change["min"], change["max"])
+        for change in load_menu_options().get("needs", []) if change["on"]
+    }
+
+
+def need_changes_cell(changes):
+    """Writes changes of the daily needs (see chosen_need_changes) as a cell of successful_menus.csv: the ids of
+    each row, its min and its max, empty without limit, as in "1003:120:150 1278+1272:0.25:"."""
+    return " ".join(
+        f"{'+'.join(map(str, ids))}:{minimum:g}:{'' if maximum is None else f'{maximum:g}'}"
+        for ids, (minimum, maximum) in changes.items()
+    )
+
+
+def parse_need_changes(cell):
+    """Returns the changes of the daily needs that a cell of successful_menus.csv tells (see need_changes_cell)."""
+    changes = {}
+    for change in cell.split():
+        ids, minimum, maximum = change.split(":")
+        changes[tuple(map(int, ids.split("+")))] = (float(minimum), float(maximum) if maximum else None)
+    return changes
+
+
+def need_changes_note(changes):
+    """Says changes of the daily needs (see chosen_need_changes), one per line, nothing without any."""
+    by_ids = {tuple(need["ids"]): need for need in load_daily_needs({})}
+    return "\n".join(
+        need_change_text(by_ids[ids], minimum, maximum) if ids in by_ids
+        # A row that the table does not have anymore
+        else f"nutrient {', '.join(map(str, ids))}: min {minimum:g}, max {'no limit' if maximum is None else f'{maximum:g}'}"
+        for ids, (minimum, maximum) in changes.items()
+    )
+
+
 def menu_food_note():
     """Returns the lines of a prompt that tell the foods the menu must have and must not have, nothing without any."""
     options = load_menu_options()
@@ -305,9 +427,12 @@ def chosen_menu_options():
     return keys, options.get("other", "")
 
 
-def menu_option_note(intro=MENU_OPTION_INTRO):
-    """Returns the lines of a prompt that tell the wishes chosen at step 1.0, nothing when there is none."""
-    keys, other = chosen_menu_options()
+def menu_option_note(intro=MENU_OPTION_INTRO, chosen=None):
+    """Returns the lines of a prompt that tell the wishes chosen at step 1.0, nothing when there is none.
+
+    chosen gives the wishes of another menu instead, as (keys of its options, its other wishes).
+    """
+    keys, other = chosen or chosen_menu_options()
     address = load_menu_options().get("address", "")
     wishes = [text.format(address=address) for key, _, text, _ in MENU_OPTIONS if key in keys]
     if other:
@@ -639,20 +764,27 @@ def _read_successful_menus(rows, choices):
 def save_successful_menu(rows, date, choices):
     """Adds the menu (see load_menu) to successful_menus.csv, the menus that satisfy the daily needs.
 
-    Each of its rows starts with the number of the menu and its date, and ends with the options chosen at step 1.0
-    and the product the food was counted as (choices: {fdc_id: product_id}). Its text is saved too, in its own file.
+    Each of its rows starts with the number of the menu and its date, and ends with the options and the changes of
+    the daily needs chosen at step 1.0, and the product the food was counted as (choices: {fdc_id: product_id}). Its text is saved too, in its own file.
     A menu that is already there with the same products is not added again.
     """
     existing, same = _read_successful_menus(rows, choices)
     if same:
         print(f"This menu is already the menu {same[0]} of '{SUCCESSFUL_MENU_FILE}'.")
+        # The review of a menu may only change its text: when to eat what
+        description = load_menu_description()
+        if description and description != load_successful_menu_description(same[0]):
+            SUCCESSFUL_MENU_DESCRIPTION_DIR.mkdir(exist_ok=True)
+            (SUCCESSFUL_MENU_DESCRIPTION_DIR / f"{same[0]}.txt").write_text(description, encoding="utf-8")
+            print("Its text is updated.")
         return
     number = max((int(row[0]) for row in existing), default=0) + 1
     keys, other = chosen_menu_options()
+    changes = need_changes_cell(chosen_need_changes())
     write_csv(
         SUCCESSFUL_MENU_FILE,
         SUCCESSFUL_MENU_HEADER,
-        existing + [[number, date, *row, " ".join(keys), other, choices.get(int(row[0]), "")] for row in rows],
+        existing + [[number, date, *row, " ".join(keys), other, changes, choices.get(int(row[0]), "")] for row in rows],
     )
     description = load_menu_description()
     if description:
@@ -662,17 +794,19 @@ def save_successful_menu(rows, date, choices):
 
 
 def load_successful_menus():
-    """Returns the menus of successful_menus.csv: {number: (date, keys of its options, other wishes, rows, products)}.
+    """Returns the menus of successful_menus.csv: {number: (date, keys of its options, other wishes, rows, products,
+    changes)}.
 
-    The rows are as in load_menu. products tells the product each food was counted as, as {fdc_id: product_id}.
+    The rows are as in load_menu. products tells the product each food was counted as, as {fdc_id: product_id},
+    changes the changes of the daily needs it was made with (see chosen_need_changes).
     """
     if not SUCCESSFUL_MENU_FILE.exists():
         return {}
     header, rows = read_csv(SUCCESSFUL_MENU_FILE)
     check_header(header, SUCCESSFUL_MENU_HEADER, SUCCESSFUL_MENU_FILE)
     menus = {}
-    for number, date, *food, keys, other, product_id in rows:
-        menu = menus.setdefault(int(number), (date, keys.split(), other, [], {}))
+    for number, date, *food, keys, other, changes, product_id in rows:
+        menu = menus.setdefault(int(number), (date, keys.split(), other, [], {}, parse_need_changes(changes)))
         menu[3].append(food)
         if product_id:
             menu[4][int(food[0])] = int(product_id)
@@ -756,6 +890,32 @@ def load_successful_menu_description(number):
     """Returns the text of a menu of successful_menus.csv, empty when it was saved without it."""
     path = SUCCESSFUL_MENU_DESCRIPTION_DIR / f"{number}.txt"
     return menu_text(path.read_text(encoding="utf-8")) if path.exists() else ""
+
+
+def review_prompt(description, rows, choices, notes="", changes=None):
+    """Returns the prompt that asks for the risks and the problems of a menu (see load_menu) that satisfies the
+    daily needs: what its totals do not show, as how its foods are eaten together.
+
+    description is the menu as a text, empty without any, choices the product each food is counted as
+    ({fdc_id: product_id}), notes the lines that tell the foods and the wishes it was made with, changes the changes
+    of the daily needs it was made with (see chosen_need_changes), the ones chosen at step 1.0 when not given.
+    """
+    tips = MENU_TIPS_FILE.read_text(encoding="utf-8").strip() if MENU_TIPS_FILE.exists() else ""
+    blocks = [daily_need_block(changes)]
+    if tips:
+        blocks.append(f"{MENU_TIPS_FILE.name} (my goals and tips)\n```\n{tips}\n```")
+    if description:
+        blocks.append(menu_description_block(description))
+    blocks.append(menu_block(rows, load_all_foods(), choices))
+    judged = f"my goals and tips of {MENU_TIPS_FILE.name}, and with anything else you know" if tips else "what you know"
+    blocks.append(
+        f"""Above is my vegan menu for a day, as a text then as a table, fdc_description being the generic food of SR Legacy 2018 or of my own foods that each row is, and product the real product I buy for it, when I have one. Counted this way, the total of the day is between min and max for each nutrient of {DAILY_NEED_FILE.name}: this was computed, do not check it again.
+Is there any risk or problem in the menu as the text describes it, that those totals do not show? Judge it with {judged}: what is eaten together or apart in each meal (a food that helps or blocks the absorption of a nutrient of another one), a food or an amount that is risky to have every day, a preparation that is missing or unsafe, ...
+{notes}If there is none, only answer that there is none, without any text of the menu nor csv. If there are, tell them in a few sentences, then write the whole corrected menu, the total of the day staying between min and max for each nutrient.
+{MENU_NOTE}
+- In the csv, keep the description of the foods you keep unchanged, even when you change their amount."""
+    )
+    return "\n\n".join(blocks)
 
 
 def parse_menu_csv(text):
@@ -992,13 +1152,17 @@ def load_nutrients():
     return {to_int(row[id_col], f"id in {NUTRIENT_FILE}"): (row[name_col], row[unit_col]) for row in rows}
 
 
-def load_daily_needs():
+def load_daily_needs(changes=None):
     """Returns the daily needs as a list of {ids, name, unit, min, max}.
 
     A need can cover several nutrients ("1278, 1272"): their amounts are summed.
     'ids' is empty for the rows without nutrient ID. 'max' is None when there is no limit.
+    The min and the max of a row are those of its change (see chosen_need_changes) when it has one: changes gives
+    them, the ones chosen at step 1.0 when not given.
     """
     nutrients = load_nutrients()
+    if changes is None:
+        changes = chosen_need_changes()
 
     header, rows = read_csv(DAILY_NEED_FILE)
     check_header(header, ["id", "name", "min", "max"], DAILY_NEED_FILE)
@@ -1021,6 +1185,8 @@ def load_daily_needs():
             "min": to_float(row[2], f"min at {where}") if row[2] else 0.0,
             "max": to_float(row[3], f"max at {where}") if row[3] else None,
         })
+        if tuple(ids) in changes:
+            needs[-1]["min"], needs[-1]["max"] = changes[tuple(ids)]
     return needs
 
 
@@ -1029,12 +1195,12 @@ def needed_nutrient_ids():
     return [nutrient_id for need in load_daily_needs() for nutrient_id in need["ids"]]
 
 
-def daily_need_block():
-    """Formats the daily need table for a prompt, with the nutrient units."""
+def daily_need_block(changes=None):
+    """Formats the daily need table for a prompt, with the nutrient units and its changes (see load_daily_needs)."""
     rows = [
         [", ".join(map(str, need["ids"])), need["name"], need["unit"], f"{need['min']:g}",
          "" if need["max"] is None else f"{need['max']:g}"]
-        for need in load_daily_needs()
+        for need in load_daily_needs(changes)
     ]
     return file_block(
         f"{DAILY_NEED_FILE.name} (min and max: for the whole day, an empty max meaning no limit)",

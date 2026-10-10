@@ -40,6 +40,8 @@ AFTER_REPORT = NUMBERS.index("1.5")
 # How a script ended: its prompt is in the clipboard, the prompt that tells the LLM about the error of its csv is,
 # the script says there is nothing to ask the LLM and that the next part is next, or it failed for another reason
 OK, ANSWER_ERROR, NOTHING_TO_DO, ERROR = "ok", "answer error", "nothing to do", "error"
+# The menu satisfies the daily needs: the prompt that asks for its risks and problems is in the clipboard
+REVIEW = "review"
 
 
 def load_state():
@@ -110,9 +112,10 @@ def run(name):
     """Runs a script, and returns how it ended and the prompt it gave, None without any."""
     print(f"\n{'=' * 20} {name} {'=' * 20}")
     common.last_prompt = None
+    common.last_prompt_is_review = False
     try:
         runpy.run_path(str(FOLDER / f"{name}.py"), run_name="__main__")
-        result = OK
+        result = REVIEW if common.last_prompt_is_review else OK
     except AnswerError as e:
         print(f"\nError in the csv of the clipboard:\n{e}")
         result = ANSWER_ERROR
@@ -156,8 +159,21 @@ def ask_what_next(current, result, prompt):
             f"Press Enter to run {NUMBERS[following]}, or type {NUMBERS[PRODUCT_PROMPT]} to ask for the foods that "
             "still have no product"
         )
+    elif result == REVIEW:
+        following = AFTER_REPORT
+        while True:
+            answer = ask(
+                "The menu satisfies the daily needs. Paste the prompt in a new discussion: it asks for its risks and "
+                "problems. If the LLM writes a corrected menu, copy its whole answer, then press Enter to run "
+                f"{NUMBERS[following]}. If it finds none, it is finished: q to quit, or type {NUMBERS[0]} to start a new menu",
+                prompt,
+            )
+            # Enter with the prompt still in the clipboard would give the script its own prompt to read
+            if answer or not holds_prompt(prompt):
+                break
+            print("The clipboard still holds the prompt: copy the answer of the LLM first, or type q if it finds no problem.")
     elif current == REPORT and prompt is None:
-        # The report gives no prompt when the menu satisfies the daily needs
+        # The state of a report that was run before it gave a prompt for a menu that satisfies the daily needs
         following = 0
         answer = ask(f"It is finished: q to quit, or press Enter to start a new menu at {NUMBERS[following]}")
     elif current == REPORT:

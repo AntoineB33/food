@@ -3,6 +3,7 @@ import pyperclip
 
 from common import (
     MENU_HEADER,
+    MENU_OPTION_KEEP_INTRO,
     MENU_OPTIONS,
     NUTRIENT_UNIT_NOTE,
     SUCCESSFUL_MENU_FILE,
@@ -14,9 +15,12 @@ from common import (
     load_products,
     load_successful_menu_description,
     load_successful_menus,
+    menu_option_note,
+    need_changes_note,
     needed_nutrient_ids,
     product_block,
     product_nutrient_db,
+    review_prompt,
     rows_to_csv,
     unchecked_foods,
 )
@@ -133,11 +137,13 @@ if __name__ == "__main__":
         }
         print(f"\n{len(found)} of the {len(menus)} menus were made with these options.")
     products = load_products()
-    for number, (date, keys, other, rows, choices) in found.items():
+    for number, (date, keys, other, rows, choices, changes) in found.items():
         # An option that MENU_OPTIONS does not have anymore is shown by its key
         made = ", ".join(MADE.get(key, key) for key in keys) or "without any option"
         print(f"\n{'=' * 20} Menu {number} ({date}) {'=' * 20}")
         print(f"Made {made}." + (f" Other wishes: {other}" if other else ""))
+        if changes:
+            print(f"Made with those changes of the daily needs:\n{need_changes_note(changes)}")
         print(checked_note(rows, choices))
         price = cost_note(
             [(int(fdc_id), float(amount), unit) for fdc_id, _, amount, unit in rows], choices,
@@ -162,10 +168,24 @@ if __name__ == "__main__":
         if not answer.isdigit() or int(answer) not in found:
             print(f"'{answer}' is not one of the menus listed above: {', '.join(map(str, found))}.")
             continue
-        rows, choices = found[int(answer)][3:]
-        if ask_yes_no("Its text and the table of its products, to read (n: its foods and their nutrients, as csv)", True):
+        _, keys, other, rows, choices, changes = found[int(answer)]
+        while True:
+            what = input(
+                "  What to copy: t for its text and the table of its products, to read, c for its foods and their "
+                "nutrients, as csv, r for the prompt that asks an LLM for its risks and problems [t]: "
+            ).strip().lower() or "t"
+            if what in ("t", "c", "r"):
+                break
+            print("  Answer t, c or r.")
+        if what == "t":
             pyperclip.copy(menu_sheet(int(answer), rows, choices))
             print(f"The text of the menu {answer} and the table of its products have been copied to your clipboard.")
-        else:
+        elif what == "c":
             pyperclip.copy(menu_tables(rows, choices))
             print(f"The foods of the menu {answer} and their nutrients have been copied to your clipboard.")
+        else:
+            # The wishes and the daily needs are the ones this menu was made with, not the ones answered last at step 1.0
+            notes = menu_option_note(MENU_OPTION_KEEP_INTRO, (keys, other))
+            pyperclip.copy(review_prompt(load_successful_menu_description(int(answer)), rows, choices, notes, changes))
+            print(f"The prompt that asks for the risks and problems of the menu {answer} has been copied to your clipboard.")
+            print("Paste it in a new discussion. If the LLM writes a corrected menu, copy its whole answer, start run.bat and type 1.5.")
