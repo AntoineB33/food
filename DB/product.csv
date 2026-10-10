@@ -41,3 +41,6 @@ product_id,fdc_id,description,shop,price,package_amount,eco,source,date
 40,172336,Auchan Huile de colza,houra.fr,2.19,1000,,https://www.houra.fr/auchan-huile-de-colza-1l/1443896/,2026-10-10
 41,169736,AUCHAN Essentiel Coquillettes,chronodrive.com,1.35,1000,,https://www.chronodrive.com/auchan--essentiel---coquillettes-P581476,2026-10-10
 42,173944,Bananes Cavendish vrac,Carrefour Palaiseau,1.99,1000,,https://www.carrefour.fr/p/bananes-cavendish-vrac-3000000033272,2026-10-10
+43,175103,Badoit Eau minérale naturelle gazeuse,Auchan Supermarché Palaiseau,4.15,6000,B,estimate,2026-10-10
+44,173468,Cérébos Sel Equilibre -50% de sodium,Auchan Supermarché Palaiseau,2.4,350,C,estimate,2026-10-10
+45,8,Solgar Citrate de Calcium 250 mg,Pharmacie Palaiseau Coeur de Ville,15,60,,estimate,2026-10-10
