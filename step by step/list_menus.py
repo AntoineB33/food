@@ -58,6 +58,43 @@ def menu_tables(rows, choices):
     return "\n\n".join(tables)
 
 
+def menu_sheet(number, rows, choices):
+    """Returns the menu (see load_menu) as a text to read: its text, then a markdown table of its foods, each one
+    with all that is known of the product it is counted as ({fdc_id: product_id}), or else with the food alone."""
+    products = load_products()
+    header = [
+        "food", "amount", "product", "shop", "price (euros)", "package", "price of the day (euros)", "eco", "source",
+        "date",
+    ]
+    table = []
+    for fdc_id, description, amount, unit in rows:
+        # A food without product, or whose product was removed since, has only its own cells
+        p = products.get(choices.get(int(fdc_id)))
+        cells = [description, f"{amount} {unit}"]
+        if p:
+            priced = p["price"] is not None and p["package_amount"]
+            cells += [
+                p["description"], p["shop"],
+                "" if p["price"] is None else f"{p['price']:g}",
+                "" if p["package_amount"] is None else f"{p['package_amount']:g} {unit}",
+                f"{p['price'] * float(amount) / p['package_amount']:.2f}" if priced else "",
+                p["eco"], p["source"], p["date"],
+            ]
+        table.append(cells + [""] * (len(header) - len(cells)))
+    lines = [header, ["---"] * len(header), *table]
+    price = cost_note(
+        [(int(fdc_id), float(amount), unit) for fdc_id, _, amount, unit in rows], choices,
+        {int(fdc_id): description for fdc_id, description, _, _ in rows},
+    )
+    parts = [
+        f"Menu {number}",
+        load_successful_menu_description(number),
+        "\n".join("| " + " | ".join(str(cell).replace("|", "/") for cell in line) + " |" for line in lines),
+        price,
+    ]
+    return "\n\n".join(part for part in parts if part)
+
+
 def checked_note(rows, choices):
     """Says whether a menu (see load_menu) is checked: every food is a product whose numbers were read on site."""
     unchecked = unchecked_foods([int(row[0]) for row in rows], choices)
@@ -117,13 +154,18 @@ if __name__ == "__main__":
             product = products.get(choices.get(int(fdc_id)))
             print(f"{amount:>7} {unit:<5}{description}" + (f" -> {product['description']}, {product['shop']}" if product else ""))
 
-    # 3. The tables of one of them, to give to an LLM or to a spreadsheet
+    # 3. One of them, as a text to read, or as the tables to give to an LLM or to a spreadsheet
     while found:
-        answer = input("\n>>> Number of a menu to copy its foods and their nutrients to the clipboard (Enter to quit): ").strip()
+        answer = input("\n>>> Number of a menu to copy to the clipboard (Enter to quit): ").strip()
         if not answer:
             break
         if not answer.isdigit() or int(answer) not in found:
             print(f"'{answer}' is not one of the menus listed above: {', '.join(map(str, found))}.")
             continue
-        pyperclip.copy(menu_tables(found[int(answer)][3], found[int(answer)][4]))
-        print(f"The foods of the menu {answer} and their nutrients have been copied to your clipboard.")
+        rows, choices = found[int(answer)][3:]
+        if ask_yes_no("Its text and the table of its products, to read (n: its foods and their nutrients, as csv)", True):
+            pyperclip.copy(menu_sheet(int(answer), rows, choices))
+            print(f"The text of the menu {answer} and the table of its products have been copied to your clipboard.")
+        else:
+            pyperclip.copy(menu_tables(rows, choices))
+            print(f"The foods of the menu {answer} and their nutrients have been copied to your clipboard.")

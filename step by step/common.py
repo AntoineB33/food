@@ -636,6 +636,17 @@ def menu_block(rows, foods=None, choices=None):
     )
 
 
+def menu_text(text):
+    """Returns the menu as a text without what an LLM wrote before it: the code it ran, its outputs and its intro.
+
+    The menu starts at its first title (a line in bold or a markdown title of level 2 or more: a '# ' line may be a
+    comment of some code). A text without any title is kept whole.
+    """
+    lines = text.split("\n")
+    start = next((index for index, line in enumerate(lines) if re.match(r"\*\*|#{2,6} ", line.strip())), 0)
+    return "\n".join(lines[start:]).strip()
+
+
 def split_menu_answer(text):
     """Returns (text of the menu, csv of the menu) of an LLM answer: the text is all that is written before the csv."""
     def is_header(line):
@@ -652,7 +663,7 @@ def split_menu_answer(text):
     # The csv may be in the same markdown block as the text, in its own one, or in none
     csv_text = "\n".join(lines[starts[-1]:])
     before = text[:text.rfind(csv_text)].split("\n")
-    description = "\n".join(line for line in before if not line.strip().startswith("```")).strip()
+    description = menu_text("\n".join(line for line in before if not line.strip().startswith("```")))
     if not description:
         raise ValueError(
             "The menu as a text is missing before the csv (the whole answer must be copied, not only its csv)."
@@ -662,7 +673,7 @@ def split_menu_answer(text):
 
 def load_menu_description():
     """Returns the menu as a text, empty for a menu that was saved without it."""
-    return MENU_DESCRIPTION_FILE.read_text(encoding="utf-8") if MENU_DESCRIPTION_FILE.exists() else ""
+    return menu_text(MENU_DESCRIPTION_FILE.read_text(encoding="utf-8")) if MENU_DESCRIPTION_FILE.exists() else ""
 
 
 def save_menu_description(description):
@@ -677,7 +688,7 @@ def menu_description_block(description):
 def load_successful_menu_description(number):
     """Returns the text of a menu of successful_menus.csv, empty when it was saved without it."""
     path = SUCCESSFUL_MENU_DESCRIPTION_DIR / f"{number}.txt"
-    return path.read_text(encoding="utf-8") if path.exists() else ""
+    return menu_text(path.read_text(encoding="utf-8")) if path.exists() else ""
 
 
 def parse_menu_csv(text):
