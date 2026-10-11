@@ -2,6 +2,7 @@ from common import (
     MENU_FILE,
     MENU_NOTE,
     MENU_OPTION_KEEP_INTRO,
+    MENU_REVIEW_FILE,
     check_menu_foods,
     daily_need_block,
     errors_to_llm,
@@ -15,6 +16,7 @@ from common import (
     parse_menu_csv,
     save_menu,
     save_menu_description,
+    save_menu_review,
     set_clipboard,
     split_menu_answer,
 )
@@ -27,10 +29,14 @@ Look for any inconsistency between the text and the table: a food of the text th
 if __name__ == "__main__":
     # 1. The clipboard holds the answer to the prompt of step 1.0, 6.0 or of this step: the menu as a text, then its csv
     with errors_to_llm(MENU_NOTE):
-        description, csv_text = split_menu_answer(get_clipboard())
+        answer = get_clipboard()
+        description, csv_text = split_menu_answer(answer)
         rows = parse_menu_csv(csv_text)
         # The foods the menu must have get their ID there
         check_menu_foods(rows)
+    # What a review found is told to the next one, so that it does not find it again nor undo its correction
+    if save_menu_review(answer):
+        print(f"What this review found is kept in {MENU_REVIEW_FILE.name}: the next review is told.")
 
     # 2. A food that the menu already had keeps its ID: only the new ones are left to identify at step 2.0
     before = load_menu() if MENU_FILE.exists() else []

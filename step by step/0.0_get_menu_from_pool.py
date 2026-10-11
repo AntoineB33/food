@@ -10,6 +10,7 @@ from common import (
     ask_menu_options,
     ask_yes_no,
     choose_menu_products,
+    clear_menu_reviews,
     daily_need_block,
     food_manual_block,
     food_pool_block,
@@ -152,6 +153,7 @@ if __name__ == "__main__":
             # 5. The menu is the one of menu.csv from now on. It has no text yet: step 6.0 asks the LLM for it
             save_menu([[str(fdc_id), descriptions[fdc_id], f"{amount:g}", units[fdc_id]] for fdc_id, amount in amounts.items()])
             save_menu_description("")
+            clear_menu_reviews()
             # Not an error: exiting this way tells 0_run_all that there is nothing to ask the LLM
             sys.exit(
                 f"The menu is in '{MENU_FILE}'. Go on with 5.0_get_product_prompt, which asks for the products of its "

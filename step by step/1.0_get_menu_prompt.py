@@ -2,6 +2,7 @@ from common import (
     DOSE,
     MENU_NOTE,
     ask_menu_options,
+    clear_menu_reviews,
     daily_need_block,
     food_limit_block,
     food_manual_block,
@@ -27,6 +28,8 @@ PROMPT = """Give me a vegan menu for a day that satisfies all the daily nutrient
 if __name__ == "__main__":
     # The foods and the wishes chosen here are also told by the prompts that correct the menu (steps 1.5 and 6.0)
     ask_menu_options()
+    # A new menu has no review yet
+    clear_menu_reviews()
     foods = f"{food_manual_block()}\n\n" if load_manual_foods() else ""
     food_note = f"{FOOD_MANUAL_NOTE}\n" if foods else ""
     tips = f"{menu_tips_block()}\n\n" if menu_tips_block() else ""

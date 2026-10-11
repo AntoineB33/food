@@ -23,6 +23,7 @@ from common import (
     cost_note,
     daily_need_block,
     dependence_block,
+    expect_menu_review,
     file_block,
     food_limit_block,
     load_all_foods,
@@ -33,6 +34,7 @@ from common import (
     load_identified_menu,
     load_menu,
     load_menu_description,
+    load_menu_reviews,
     load_menu_text_amounts,
     load_nutrients,
     load_product_nutrients,
@@ -48,6 +50,7 @@ from common import (
     review_prompt,
     rows_to_csv,
     save_menu,
+    save_menu_history,
     save_menu_products,
     save_menu_text_amounts,
     save_successful_menu,
@@ -382,9 +385,11 @@ if __name__ == "__main__":
 
     # A menu computed from the food pool at step 0.0 has no text yet
     described = bool(load_menu_description())
+    # Only the answer to the review prompt, when it is the one given below, tells what a review found
+    expect_menu_review(False)
     if not failing and not changes and described:
         print("No nutrition lacks or excesses found. The menu satisfies the daily needs!")
-        save_successful_menu(rows, date.today().isoformat(), choices)
+        number = save_successful_menu(rows, date.today().isoformat(), choices)
         # Its foods are worth having in the pool, each one with at most this amount when it has no limit yet
         if load_food_pool() is not None:
             added = add_to_food_pool({fdc_id: amount for fdc_id, amount, _ in menu})
@@ -392,9 +397,19 @@ if __name__ == "__main__":
                 print(f"{len(added)} of its foods are added to the food pool: {', '.join(descriptions[fdc_id] for fdc_id in added)}.")
         # The totals do not tell everything: the LLM looks for what is wrong in the way the menu is eaten
         notes = menu_food_note() + menu_option_note(MENU_OPTION_KEEP_INTRO)
-        set_clipboard(review_prompt(load_menu_description(), rows, choices, notes), review=True)
-        print("Paste it in a new discussion: it asks whether the menu has risks or problems that the totals do not show.")
+        # A review is a new discussion: it is told what the ones before found, or it would never find the menu right
+        reviews = load_menu_reviews()
+        set_clipboard(review_prompt(load_menu_description(), rows, choices, notes, reviews=reviews), review=True)
+        expect_menu_review()
+        print("Paste it in a new discussion: it asks whether the menu has serious risks or problems that the totals do not show.")
+        if reviews:
+            print(
+                f"The menu was already reviewed {len(reviews)} times and corrected: the prompt tells what was found. What "
+                "a review still finds may not be worth another one: read it, the menu is finished when you find it good enough."
+            )
         print("If the LLM writes a corrected menu, copy its whole answer and run 1.5_copy_menu_then_check. If it finds none, it is finished.")
+        # The menu has its own history file: all the prompts and answers that led to it, this prompt being the last
+        save_menu_history(number)
     # Amounts that are only brought back within the limits are not a choice
     elif (changes or (not described and not failing)) and (
         not failing or ask_yes_no("Take these amounts (n: ask the LLM to correct the menu instead)", True)

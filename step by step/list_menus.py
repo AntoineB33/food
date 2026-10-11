@@ -15,6 +15,7 @@ from common import (
     load_products,
     load_successful_menu_description,
     load_successful_menus,
+    menu_history_file,
     menu_option_note,
     need_changes_note,
     needed_nutrient_ids,
@@ -145,6 +146,8 @@ if __name__ == "__main__":
         if changes:
             print(f"Made with those changes of the daily needs:\n{need_changes_note(changes)}")
         print(checked_note(rows, choices))
+        if menu_history_file(number).exists():
+            print(f"The prompts and the answers that led to it are in '{menu_history_file(number)}'.")
         price = cost_note(
             [(int(fdc_id), float(amount), unit) for fdc_id, _, amount, unit in rows], choices,
             {int(fdc_id): description for fdc_id, description, _, _ in rows},

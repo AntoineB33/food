@@ -36,6 +36,9 @@ MENU_DESCRIPTION_FILE = DB_DIR / "menu_description.txt"
 # The menu with the amounts this text has, while menu.csv has others that step 6.0 computed and the text is not
 # written again yet: a menu is not saved as successful with a text that is not its own. Not in git
 MENU_TEXT_AMOUNT_FILE = DB_DIR / "menu_text_amounts.csv"
+# What the reviews of the menu being made found (see review_prompt), and whether the answer to one is waited for:
+# each review is a new discussion, which is told what the ones before found. Not in git
+MENU_REVIEW_FILE = DB_DIR / "menu_reviews.json"
 SUCCESSFUL_MENU_FILE = DB_DIR / "successful_menus.csv"
 # The text of each menu of successful_menus.csv, in a file named after its number
 SUCCESSFUL_MENU_DESCRIPTION_DIR = DB_DIR / "successful_menu_descriptions"
@@ -818,7 +821,7 @@ def save_successful_menu(rows, date, choices):
 
     Each of its rows starts with the number of the menu and its date, and ends with the options and the changes of
     the daily needs chosen at step 1.0, and the product the food was counted as (choices: {fdc_id: product_id}). Its text is saved too, in its own file.
-    A menu that is already there with the same products is not added again.
+    A menu that is already there with the same products is not added again. Returns the number of the menu.
     """
     existing, same = _read_successful_menus(rows, choices)
     if same:
@@ -829,7 +832,7 @@ def save_successful_menu(rows, date, choices):
             SUCCESSFUL_MENU_DESCRIPTION_DIR.mkdir(exist_ok=True)
             (SUCCESSFUL_MENU_DESCRIPTION_DIR / f"{same[0]}.txt").write_text(description, encoding="utf-8")
             print("Its text is updated.")
-        return
+        return same[0]
     number = max((int(row[0]) for row in existing), default=0) + 1
     keys, other = chosen_menu_options()
     changes = need_changes_cell(chosen_need_changes())
@@ -843,6 +846,29 @@ def save_successful_menu(rows, date, choices):
         SUCCESSFUL_MENU_DESCRIPTION_DIR.mkdir(exist_ok=True)
         (SUCCESSFUL_MENU_DESCRIPTION_DIR / f"{number}.txt").write_text(description, encoding="utf-8")
     print(f"Saved as the menu {number} of '{SUCCESSFUL_MENU_FILE}'.")
+    return number
+
+
+def menu_history_file(number):
+    """Returns the file that holds the history of a menu of successful_menus.csv (see save_menu_history)."""
+    return HISTORY_DIR / f"menu {number}.txt"
+
+
+def save_menu_history(number):
+    """Keeps the history that led to a menu of successful_menus.csv in its own file: all that the history being
+    kept has so far. A menu that is the correction of another one starts with the history of that one.
+
+    The file of a menu that already has one is only written again from the history it was taken from, which went
+    on since (its text was corrected): another history that only finds this menu again did not lead to it.
+    """
+    if not history_file or not Path(history_file).exists():
+        return
+    text = Path(history_file).read_text(encoding="utf-8")
+    path = menu_history_file(number)
+    if path.exists() and path.read_text(encoding="utf-8").split("\n", 1)[0] != text.split("\n", 1)[0]:
+        return
+    path.write_text(text, encoding="utf-8")
+    print(f"The history that led to the menu {number} is in '{path}'.")
 
 
 def load_successful_menus():
@@ -889,6 +915,11 @@ def menu_block(rows, foods=None, choices=None):
     )
 
 
+def menu_text_start(lines):
+    """Returns the index of the line the menu as a text starts at (see menu_text), 0 without any title."""
+    return next((index for index, line in enumerate(lines) if re.match(r"\*\*|#{2,6} ", line.strip())), 0)
+
+
 def menu_text(text):
     """Returns the menu as a text without what an LLM wrote before it: the code it ran, its outputs and its intro.
 
@@ -896,8 +927,7 @@ def menu_text(text):
     comment of some code). A text without any title is kept whole.
     """
     lines = text.split("\n")
-    start = next((index for index, line in enumerate(lines) if re.match(r"\*\*|#{2,6} ", line.strip())), 0)
-    return "\n".join(lines[start:]).strip()
+    return "\n".join(lines[menu_text_start(lines):]).strip()
 
 
 def split_menu_answer(text):
@@ -970,26 +1000,84 @@ def menu_tips_block():
     return f"{MENU_TIPS_FILE.name} (my goals and tips)\n```\n{tips}\n```" if tips else ""
 
 
-def review_prompt(description, rows, choices, notes="", changes=None):
+def load_menu_review_state():
+    """Returns (what each review of the menu being made found, whether the answer to a review is waited for)."""
+    try:
+        state = json.loads(MENU_REVIEW_FILE.read_text(encoding="utf-8"))
+        return list(state["reviews"]), bool(state["expected"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return [], False
+
+
+def load_menu_reviews():
+    """Returns what each review of the menu being made found, the oldest first."""
+    return load_menu_review_state()[0]
+
+
+def expect_menu_review(expected=True):
+    """Remembers whether the prompt just given is the one that reviews the menu: step 1.5 then keeps what its
+    answer found."""
+    reviews, before = load_menu_review_state()
+    if expected != before:
+        MENU_REVIEW_FILE.write_text(json.dumps({"expected": expected, "reviews": reviews}), encoding="utf-8")
+
+
+def save_menu_review(answer):
+    """Keeps what the review found, when answer is the one to the review prompt: all that the LLM wrote before the
+    menu as a text. Returns whether it did."""
+    reviews, expected = load_menu_review_state()
+    if not expected:
+        return False
+    lines = answer.split("\n")
+    found = "\n".join(lines[:menu_text_start(lines)]).strip()
+    if found:
+        reviews.append(found)
+    MENU_REVIEW_FILE.write_text(json.dumps({"expected": False, "reviews": reviews}), encoding="utf-8")
+    return bool(found)
+
+
+def clear_menu_reviews():
+    """Forgets the reviews: a new menu starts."""
+    MENU_REVIEW_FILE.unlink(missing_ok=True)
+
+
+def menu_review_block(reviews):
+    """Formats what the reviews before found for a prompt."""
+    text = "\n\n".join(f"Review {number}:\n{review}" for number, review in enumerate(reviews, start=1))
+    return f"menu_reviews.txt (what the reviews before this one found, the oldest first)\n```\n{text}\n```"
+
+
+# Told by the review prompt of a menu that was already reviewed: without it, each new discussion finds other
+# things to change, or undoes what the one before changed, and no review ever finds the menu right
+REVIEWED_NOTE = """This menu was already reviewed {times}, each time in a new discussion, and corrected for what menu_reviews.txt tells: the text above is the corrected one. Do not tell those problems again, and do not undo nor change again what was corrected for them: another opinion on something a review already settled is not a problem. Most likely nothing is left: only tell a serious problem that all those reviews missed.
+"""
+
+
+def review_prompt(description, rows, choices, notes="", changes=None, reviews=()):
     """Returns the prompt that asks for the risks and the problems of a menu (see load_menu) that satisfies the
     daily needs: what its totals do not show, as how its foods are eaten together.
 
     description is the menu as a text, empty without any, choices the product each food is counted as
     ({fdc_id: product_id}), notes the lines that tell the foods and the wishes it was made with, changes the changes
-    of the daily needs it was made with (see chosen_need_changes), the ones chosen at step 1.0 when not given.
+    of the daily needs it was made with (see chosen_need_changes), the ones chosen at step 1.0 when not given,
+    reviews what the reviews before found (see load_menu_reviews).
     """
     tips = menu_tips_block()
     blocks = [daily_need_block(changes)]
     if tips:
         blocks.append(tips)
+    if reviews:
+        blocks.append(menu_review_block(reviews))
     if description:
         blocks.append(menu_description_block(description))
     blocks.append(menu_block(rows, load_all_foods(), choices))
     judged = f"my goals and tips of {MENU_TIPS_FILE.name}, and with anything else you know" if tips else "what you know"
+    reviewed = REVIEWED_NOTE.format(times="once" if len(reviews) == 1 else f"{len(reviews)} times") if reviews else ""
     blocks.append(
         f"""Above is my vegan menu for a day, as a text then as a table, fdc_description being the generic food of SR Legacy 2018 or of my own foods that each row is, and product the real product I buy for it, when I have one. Counted this way, the total of the day is between min and max for each nutrient of {DAILY_NEED_FILE.name}: this was computed, do not check it again.
-Is there any risk or problem in the menu as the text describes it, that those totals do not show? Judge it with {judged}: what is eaten together or apart in each meal (a food that helps or blocks the absorption of a nutrient of another one), a food or an amount that is risky to have every day, a preparation that is missing or unsafe, ...
-{notes}If there is none, only answer that there is none, without any text of the menu nor csv. If there are, tell them in a few sentences, then write the whole corrected menu, the total of the day staying between min and max for each nutrient.
+Is there any serious risk or problem in the menu as the text describes it, that those totals do not show? Judge it with {judged}: what is eaten together or apart in each meal (a food that helps or blocks the absorption of a nutrient of another one), a food or an amount that is risky to have every day, a preparation that is missing or unsafe, ...
+A problem is serious when it harms my health or makes a nutrient of the totals clearly not absorbed, and when I would be wrong to eat the menu as it is. No menu is perfect, and "there is none" is the answer I expect of a menu that is good enough: something that could only be better, a doubt, a matter of taste, a reminder to buy the right product or an advice that changes nothing in the text is not a problem.
+{reviewed}{notes}If there is none, only answer that there is none, without any text of the menu nor csv. If there are, tell each one in one or two sentences, as a plain numbered list without any title, then write the whole corrected menu, the total of the day staying between min and max for each nutrient.
 {MENU_NOTE}
 - In the csv, keep the description of the foods you keep unchanged, even when you change their amount."""
     )
