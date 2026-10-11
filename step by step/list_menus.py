@@ -11,6 +11,7 @@ from common import (
     cost_note,
     file_block,
     load_food_nutrients,
+    load_menu_review_state,
     load_nutrients,
     load_products,
     load_successful_menu_description,
@@ -22,7 +23,9 @@ from common import (
     product_block,
     product_nutrient_db,
     review_prompt,
+    reviewed_menus,
     rows_to_csv,
+    save_menu_review_state,
     unchecked_foods,
 )
 
@@ -138,6 +141,7 @@ if __name__ == "__main__":
         }
         print(f"\n{len(found)} of the {len(menus)} menus were made with these options.")
     products = load_products()
+    reviewed = reviewed_menus()
     for number, (date, keys, other, rows, choices, changes) in found.items():
         # An option that MENU_OPTIONS does not have anymore is shown by its key
         made = ", ".join(MADE.get(key, key) for key in keys) or "without any option"
@@ -146,6 +150,10 @@ if __name__ == "__main__":
         if changes:
             print(f"Made with those changes of the daily needs:\n{need_changes_note(changes)}")
         print(checked_note(rows, choices))
+        print(
+            f"Reviewed on {reviewed[number]}: the LLM found no problem in it." if number in reviewed
+            else "Not reviewed: it satisfies the daily needs, but no review of the LLM found it without problem yet."
+        )
         if menu_history_file(number).exists():
             print(f"The prompts and the answers that led to it are in '{menu_history_file(number)}'.")
         price = cost_note(
@@ -189,6 +197,11 @@ if __name__ == "__main__":
         else:
             # The wishes and the daily needs are the ones this menu was made with, not the ones answered last at step 1.0
             notes = menu_option_note(MENU_OPTION_KEEP_INTRO, (keys, other))
-            pyperclip.copy(review_prompt(load_successful_menu_description(int(answer)), rows, choices, notes, changes))
+            # The corrected menu takes the place of this one, not of the menu that run.bat made last, whose
+            # reviews are forgotten: step 1.5 keeps what this review finds
+            reviews, _, made = load_menu_review_state()
+            reviews = reviews if made == int(answer) else []
+            save_menu_review_state(reviews, True, int(answer))
+            pyperclip.copy(review_prompt(load_successful_menu_description(int(answer)), rows, choices, notes, changes, reviews))
             print(f"The prompt that asks for the risks and problems of the menu {answer} has been copied to your clipboard.")
-            print("Paste it in a new discussion. If the LLM writes a corrected menu, copy its whole answer, start run.bat and type 1.5.")
+            print("Paste it in a new discussion. If the LLM writes a corrected menu, copy its whole answer, start run.bat and type 1.5: it takes the place of this menu once it satisfies the daily needs.")

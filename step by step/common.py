@@ -76,7 +76,9 @@ MENU_HEADER = ["fdc_id", "description", "amount", "unit"]
 # options: the keys of the options (see MENU_OPTIONS) the menu was made with, other: its other wishes,
 # needs: the changes of the daily needs it was made with (see need_changes_cell),
 # product_id: the product the food was counted as, empty when it was counted as the generic food
-SUCCESSFUL_MENU_HEADER = ["menu", "date", *MENU_HEADER, "options", "other", "needs", "product_id"]
+# reviewed: the date of the review that found no problem in the menu, empty until then
+SUCCESSFUL_MENU_HEADER = ["menu", "date", *MENU_HEADER, "options", "other", "needs", "reviewed", "product_id"]
+REVIEWED_COLUMN = SUCCESSFUL_MENU_HEADER.index("reviewed")
 # How the LLM writes the menu, then the food each row of the menu is, then the ingredients and the nutrients
 MENU_ANSWER_HEADER = ["description", "amount", "unit"]
 FOOD_LIST_HEADER = ["description", "fdc_id", "fdc_description"]
@@ -821,31 +823,49 @@ def save_successful_menu(rows, date, choices):
 
     Each of its rows starts with the number of the menu and its date, and ends with the options and the changes of
     the daily needs chosen at step 1.0, and the product the food was counted as (choices: {fdc_id: product_id}). Its text is saved too, in its own file.
-    A menu that is already there with the same products is not added again. Returns the number of the menu.
+    A menu that is already there with the same products is not added again. A menu that a review corrected is the
+    same menu going on: it takes the place of the one that was reviewed, with its number, and is not reviewed
+    anymore. Returns the number of the menu.
     """
     existing, same = _read_successful_menus(rows, choices)
+    description = load_menu_description()
     if same:
-        print(f"This menu is already the menu {same[0]} of '{SUCCESSFUL_MENU_FILE}'.")
+        number = same[0]
+        print(f"This menu is already the menu {number} of '{SUCCESSFUL_MENU_FILE}'.")
         # The review of a menu may only change its text: when to eat what
-        description = load_menu_description()
-        if description and description != load_successful_menu_description(same[0]):
+        if description and description != load_successful_menu_description(number):
             SUCCESSFUL_MENU_DESCRIPTION_DIR.mkdir(exist_ok=True)
-            (SUCCESSFUL_MENU_DESCRIPTION_DIR / f"{same[0]}.txt").write_text(description, encoding="utf-8")
+            (SUCCESSFUL_MENU_DESCRIPTION_DIR / f"{number}.txt").write_text(description, encoding="utf-8")
             print("Its text is updated.")
-        return same[0]
-    number = max((int(row[0]) for row in existing), default=0) + 1
+            # The review that found no problem was of the text of before
+            if any(row[REVIEWED_COLUMN] for row in existing if int(row[0]) == number):
+                for row in existing:
+                    if int(row[0]) == number:
+                        row[REVIEWED_COLUMN] = ""
+                write_csv(SUCCESSFUL_MENU_FILE, SUCCESSFUL_MENU_HEADER, existing)
+        set_reviewed_menu(number)
+        return number
+    # The number the menu being made was saved with, when a review changed its foods, amounts or products since
+    before = load_menu_review_state()[2]
+    replaced = before in {int(row[0]) for row in existing}
+    number = before if replaced else max((int(row[0]) for row in existing), default=0) + 1
     keys, other = chosen_menu_options()
     changes = need_changes_cell(chosen_need_changes())
-    write_csv(
-        SUCCESSFUL_MENU_FILE,
-        SUCCESSFUL_MENU_HEADER,
-        existing + [[number, date, *row, " ".join(keys), other, changes, choices.get(int(row[0]), "")] for row in rows],
-    )
-    description = load_menu_description()
+    added = [[number, date, *row, " ".join(keys), other, changes, "", choices.get(int(row[0]), "")] for row in rows]
+    # The menus stay in the order of their numbers
+    kept = [row for row in existing if int(row[0]) != number]
+    write_csv(SUCCESSFUL_MENU_FILE, SUCCESSFUL_MENU_HEADER, sorted(kept + added, key=lambda row: int(row[0])))
     if description:
         SUCCESSFUL_MENU_DESCRIPTION_DIR.mkdir(exist_ok=True)
         (SUCCESSFUL_MENU_DESCRIPTION_DIR / f"{number}.txt").write_text(description, encoding="utf-8")
-    print(f"Saved as the menu {number} of '{SUCCESSFUL_MENU_FILE}'.")
+    if replaced:
+        # The history being kept led to the menu as it is now, whatever history its file was taken from
+        if history_file:
+            menu_history_file(number).unlink(missing_ok=True)
+        print(f"Saved as the menu {number} of '{SUCCESSFUL_MENU_FILE}', in place of the one that the review corrected.")
+    else:
+        print(f"Saved as the menu {number} of '{SUCCESSFUL_MENU_FILE}'.")
+    set_reviewed_menu(number)
     return number
 
 
@@ -856,10 +876,10 @@ def menu_history_file(number):
 
 def save_menu_history(number):
     """Keeps the history that led to a menu of successful_menus.csv in its own file: all that the history being
-    kept has so far. A menu that is the correction of another one starts with the history of that one.
+    kept has so far.
 
     The file of a menu that already has one is only written again from the history it was taken from, which went
-    on since (its text was corrected): another history that only finds this menu again did not lead to it.
+    on since (a review corrected the menu): another history that only finds this menu again did not lead to it.
     """
     if not history_file or not Path(history_file).exists():
         return
@@ -883,12 +903,41 @@ def load_successful_menus():
     header, rows = read_csv(SUCCESSFUL_MENU_FILE)
     check_header(header, SUCCESSFUL_MENU_HEADER, SUCCESSFUL_MENU_FILE)
     menus = {}
-    for number, date, *food, keys, other, changes, product_id in rows:
+    for number, date, *food, keys, other, changes, _, product_id in rows:
         menu = menus.setdefault(int(number), (date, keys.split(), other, [], {}, parse_need_changes(changes)))
         menu[3].append(food)
         if product_id:
             menu[4][int(food[0])] = int(product_id)
     return menus
+
+
+def reviewed_menus():
+    """Returns the menus of successful_menus.csv whose last review found no problem: {number: date of the review}.
+
+    The others only satisfy the daily needs: their review was not asked, not answered, or found something.
+    """
+    if not SUCCESSFUL_MENU_FILE.exists():
+        return {}
+    header, rows = read_csv(SUCCESSFUL_MENU_FILE)
+    check_header(header, SUCCESSFUL_MENU_HEADER, SUCCESSFUL_MENU_FILE)
+    return {int(row[0]): row[REVIEWED_COLUMN] for row in rows if row[REVIEWED_COLUMN]}
+
+
+def mark_menu_reviewed(date):
+    """Marks the menu being made as reviewed in successful_menus.csv: the LLM found no problem in it. Returns its
+    number, None when it is not one of its menus."""
+    number = load_menu_review_state()[2]
+    if not SUCCESSFUL_MENU_FILE.exists():
+        return None
+    header, rows = read_csv(SUCCESSFUL_MENU_FILE)
+    check_header(header, SUCCESSFUL_MENU_HEADER, SUCCESSFUL_MENU_FILE)
+    of_menu = [row for row in rows if int(row[0]) == number]
+    if not of_menu:
+        return None
+    for row in of_menu:
+        row[REVIEWED_COLUMN] = date
+    write_csv(SUCCESSFUL_MENU_FILE, SUCCESSFUL_MENU_HEADER, rows)
+    return number
 
 
 def menu_block(rows, foods=None, choices=None):
@@ -1001,12 +1050,25 @@ def menu_tips_block():
 
 
 def load_menu_review_state():
-    """Returns (what each review of the menu being made found, whether the answer to a review is waited for)."""
+    """Returns (what each review of the menu being made found, whether the answer to a review is waited for, the
+    number it is saved with in successful_menus.csv, None when it is not saved yet)."""
     try:
         state = json.loads(MENU_REVIEW_FILE.read_text(encoding="utf-8"))
-        return list(state["reviews"]), bool(state["expected"])
+        return list(state["reviews"]), bool(state["expected"]), state.get("menu")
     except (OSError, ValueError, KeyError, TypeError):
-        return [], False
+        return [], False, None
+
+
+def save_menu_review_state(reviews, expected, number):
+    MENU_REVIEW_FILE.write_text(json.dumps({"expected": expected, "reviews": reviews, "menu": number}), encoding="utf-8")
+
+
+def set_reviewed_menu(number):
+    """Remembers the number the menu being made is saved with in successful_menus.csv: the menu that a review
+    corrects takes its place."""
+    reviews, expected, before = load_menu_review_state()
+    if number != before:
+        save_menu_review_state(reviews, expected, number)
 
 
 def load_menu_reviews():
@@ -1017,22 +1079,22 @@ def load_menu_reviews():
 def expect_menu_review(expected=True):
     """Remembers whether the prompt just given is the one that reviews the menu: step 1.5 then keeps what its
     answer found."""
-    reviews, before = load_menu_review_state()
+    reviews, before, number = load_menu_review_state()
     if expected != before:
-        MENU_REVIEW_FILE.write_text(json.dumps({"expected": expected, "reviews": reviews}), encoding="utf-8")
+        save_menu_review_state(reviews, expected, number)
 
 
 def save_menu_review(answer):
     """Keeps what the review found, when answer is the one to the review prompt: all that the LLM wrote before the
     menu as a text. Returns whether it did."""
-    reviews, expected = load_menu_review_state()
+    reviews, expected, number = load_menu_review_state()
     if not expected:
         return False
     lines = answer.split("\n")
     found = "\n".join(lines[:menu_text_start(lines)]).strip()
     if found:
         reviews.append(found)
-    MENU_REVIEW_FILE.write_text(json.dumps({"expected": False, "reviews": reviews}), encoding="utf-8")
+    save_menu_review_state(reviews, False, number)
     return bool(found)
 
 

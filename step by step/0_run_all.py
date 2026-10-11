@@ -301,17 +301,28 @@ def ask_what_next(current, result, prompt):
             answer = ask(
                 "The menu satisfies the daily needs. Paste the prompt in a new discussion: it asks for its risks and "
                 "problems. If the LLM writes a corrected menu, copy its whole answer, then press Enter to run "
-                f"{NUMBERS[following]}. If it finds none, it is finished: q to quit, or type {NUMBERS[POOL]} or {NUMBERS[LLM_MENU]} to start a new menu",
+                f"{NUMBERS[following]}. If it finds none, type y: the menu is marked as reviewed, and it is finished. "
+                "q quits without marking it: the question is asked again next time",
                 prompt,
+                answers=("y",),
                 signs=(
                     NEW_CHAT, f"corrected menu: {what}, {ENTER} runs {NUMBERS[following]}",
-                    f"{FINISHED} no problem found, q quits, {NUMBERS[POOL]} or {NUMBERS[LLM_MENU]} starts a new menu",
+                    f"{FINISHED} no problem found, y marks the menu as reviewed",
                 ),
             )
             # Enter with the prompt still in the clipboard would give the script its own prompt to read
             if answer or not holds_prompt(prompt):
                 break
-            print("The clipboard still holds the prompt: copy the answer of the LLM first, or type q if it finds no problem.")
+            print("The clipboard still holds the prompt: copy the answer of the LLM first, or type y if it finds no problem.")
+        if answer == "y":
+            number = common.mark_menu_reviewed(f"{datetime.now():%Y-%m-%d}")
+            print(
+                f"The menu {number} is marked as reviewed in '{common.SUCCESSFUL_MENU_FILE}'." if number
+                else f"The menu is not in '{common.SUCCESSFUL_MENU_FILE}' anymore: nothing is marked."
+            )
+            # Started again, run.bat does not ask for the review again
+            save_state(current, OK, None)
+            return ask_what_next(current, OK, None)
     elif current == REPORT and prompt is None:
         # The state of a report that was run before it gave a prompt for a menu that satisfies the daily needs
         following = POOL

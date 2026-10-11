@@ -407,7 +407,8 @@ if __name__ == "__main__":
                 f"The menu was already reviewed {len(reviews)} times and corrected: the prompt tells what was found. What "
                 "a review still finds may not be worth another one: read it, the menu is finished when you find it good enough."
             )
-        print("If the LLM writes a corrected menu, copy its whole answer and run 1.5_copy_menu_then_check. If it finds none, it is finished.")
+        print("If the LLM writes a corrected menu, copy its whole answer and run 1.5_copy_menu_then_check: it takes the place of this one.")
+        print("If it finds none, it is finished: typing y in run.bat marks the menu as reviewed.")
         # The menu has its own history file: all the prompts and answers that led to it, this prompt being the last
         save_menu_history(number)
     # Amounts that are only brought back within the limits are not a choice
