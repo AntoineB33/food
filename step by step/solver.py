@@ -8,8 +8,6 @@ from common import DOSE, amount_step
 FOOD_COST = 0.1
 # The least of a food that is worth having in a menu, as a share of its max
 LEAST_SHARE = 0.1
-# How many of the foods of a saved menu a new menu must not have, when it must differ from the saved ones
-DIFFERENT = 3
 # What a need out of its range by its whole min or max costs, in euros: when no menu satisfies the needs, the
 # closest one to the needs is looked for before the cheapest one
 OUT_COST = 1000
@@ -30,14 +28,13 @@ def day_totals(amounts, units, nutrient_db, needs):
     ]
 
 
-def solve_menu(foods, nutrient_db, needs, limits, prices, forced=(), others=(), strict=True):
+def solve_menu(foods, nutrient_db, needs, limits, prices, forced=(), strict=True):
     """Returns the cheapest menu of those foods that satisfies the needs, as {fdc_id: amount}, None without any.
 
     foods is a list of (fdc_id, unit), limits the least and the most of each one in a day ({fdc_id: (min, max)}, the
     max being given), prices what one gram or one dose of each one costs. A food that is in the menu has at least
-    its min, or else LEAST_SHARE of its max. The forced foods are in the menu. others are the foods of other menus:
-    the menu lacks at least DIFFERENT foods of each one. Without strict, the needs that no menu satisfies are left
-    out of their range, by as little as possible.
+    its min, or else LEAST_SHARE of its max. The forced foods are in the menu. Without strict, the needs
+    that no menu satisfies are left out of their range, by as little as possible.
     """
     needs = [need for need in needs if need["min"] > 0 or need["max"] is not None]
     count, kept = len(foods), len(needs)
@@ -76,15 +73,6 @@ def solve_menu(foods, nutrient_db, needs, limits, prices, forced=(), others=(), 
             lower.append(low)
             upper.append(high)
     ids = [fdc_id for fdc_id, _ in foods]
-    for other in others:
-        shared = [index for index, fdc_id in enumerate(ids) if fdc_id in other]
-        # A menu that has foods out of the pool cannot be found again anyway
-        if len(shared) == len(other) and len(shared) > DIFFERENT:
-            row = np.zeros(size)
-            row[[count + index for index in shared]] = 1
-            rows.append(row)
-            lower.append(-np.inf)
-            upper.append(len(shared) - DIFFERENT)
 
     cost = np.concatenate([
         np.array([prices[fdc_id] for fdc_id in ids]) * steps, np.full(count, FOOD_COST), np.full(2 * kept, OUT_COST),

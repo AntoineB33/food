@@ -1,6 +1,5 @@
 import math
 from collections import defaultdict
-from datetime import date
 
 import numpy as np
 from scipy.optimize import Bounds, LinearConstraint, milp
@@ -16,7 +15,7 @@ from common import (
     ON_SITE,
     PRODUCT_NOTE,
     PRODUCT_NUTRIENT_NOTE,
-    add_to_food_pool,
+    SUCCESSFUL_MENU_FILE,
     amount_step,
     ask_yes_no,
     choose_menu_products,
@@ -30,7 +29,6 @@ from common import (
     load_daily_needs,
     load_food_limits,
     load_food_nutrients,
-    load_food_pool,
     load_identified_menu,
     load_menu,
     load_menu_description,
@@ -50,10 +48,8 @@ from common import (
     review_prompt,
     rows_to_csv,
     save_menu,
-    save_menu_history,
     save_menu_products,
     save_menu_text_amounts,
-    save_successful_menu,
     set_clipboard,
     within_limits,
 )
@@ -389,13 +385,8 @@ if __name__ == "__main__":
     expect_menu_review(False)
     if not failing and not changes and described:
         print("No nutrition lacks or excesses found. The menu satisfies the daily needs!")
-        number = save_successful_menu(rows, date.today().isoformat(), choices)
-        # Its foods are worth having in the pool, each one with at most this amount when it has no limit yet
-        if load_food_pool() is not None:
-            added = add_to_food_pool({fdc_id: amount for fdc_id, amount, _ in menu})
-            if added:
-                print(f"{len(added)} of its foods are added to the food pool: {', '.join(descriptions[fdc_id] for fdc_id in added)}.")
-        # The totals do not tell everything: the LLM looks for what is wrong in the way the menu is eaten
+        # The totals do not tell everything: the LLM looks for what is wrong in the way the menu is eaten. The menu
+        # is only saved once a review finds no problem in it (see save_reviewed_menu)
         notes = menu_food_note() + menu_option_note(MENU_OPTION_KEEP_INTRO)
         # A review is a new discussion: it is told what the ones before found, or it would never find the menu right
         reviews = load_menu_reviews()
@@ -408,9 +399,7 @@ if __name__ == "__main__":
                 "a review still finds may not be worth another one: read it, the menu is finished when you find it good enough."
             )
         print("If the LLM writes a corrected menu, copy its whole answer and run 1.5_copy_menu_then_check: it takes the place of this one.")
-        print("If it finds none, it is finished: typing y in run.bat marks the menu as reviewed.")
-        # The history becomes the file of the menu: all the prompts and answers that led to it, and what follows
-        save_menu_history(number)
+        print(f"If it finds none, it is finished: typing y in run.bat saves the menu in '{SUCCESSFUL_MENU_FILE.name}'.")
     # Amounts that are only brought back within the limits are not a choice
     elif (changes or (not described and not failing)) and (
         not failing or ask_yes_no("Take these amounts (n: ask the LLM to correct the menu instead)", True)

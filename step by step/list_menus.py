@@ -204,4 +204,4 @@ if __name__ == "__main__":
             save_menu_review_state(reviews, True, int(answer))
             pyperclip.copy(review_prompt(load_successful_menu_description(int(answer)), rows, choices, notes, changes, reviews))
             print(f"The prompt that asks for the risks and problems of the menu {answer} has been copied to your clipboard.")
-            print("Paste it in a new discussion. If the LLM writes a corrected menu, copy its whole answer, start run.bat and type 1.5: it takes the place of this menu once it satisfies the daily needs.")
+            print("Paste it in a new discussion. If the LLM writes a corrected menu, copy its whole answer, start run.bat and type 1.5: it takes the place of this menu once it satisfies the daily needs and a review finds no problem in it.")

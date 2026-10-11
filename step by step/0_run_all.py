@@ -301,13 +301,13 @@ def ask_what_next(current, result, prompt):
             answer = ask(
                 "The menu satisfies the daily needs. Paste the prompt in a new discussion: it asks for its risks and "
                 "problems. If the LLM writes a corrected menu, copy its whole answer, then press Enter to run "
-                f"{NUMBERS[following]}. If it finds none, type y: the menu is marked as reviewed, and it is finished. "
-                "q quits without marking it: the question is asked again next time",
+                f"{NUMBERS[following]}. If it finds none, type y: the menu is saved as a reviewed one, and it is finished. "
+                "q quits without saving it: the question is asked again next time",
                 prompt,
                 answers=("y",),
                 signs=(
                     NEW_CHAT, f"corrected menu: {what}, {ENTER} runs {NUMBERS[following]}",
-                    f"{FINISHED} no problem found, y marks the menu as reviewed",
+                    f"{FINISHED} no problem found, y saves the menu as reviewed",
                 ),
             )
             # Enter with the prompt still in the clipboard would give the script its own prompt to read
@@ -315,11 +315,9 @@ def ask_what_next(current, result, prompt):
                 break
             print("The clipboard still holds the prompt: copy the answer of the LLM first, or type y if it finds no problem.")
         if answer == "y":
-            number = common.mark_menu_reviewed(f"{datetime.now():%Y-%m-%d}")
-            print(
-                f"The menu {number} is marked as reviewed in '{common.SUCCESSFUL_MENU_FILE}'." if number
-                else f"The menu is not in '{common.SUCCESSFUL_MENU_FILE}' anymore: nothing is marked."
-            )
+            # A menu is only saved now: one that satisfies the daily needs may still have problems
+            number = common.save_reviewed_menu(f"{datetime.now():%Y-%m-%d}")
+            print(f"The menu {number} is reviewed, in '{common.SUCCESSFUL_MENU_FILE}'.")
             # Started again, run.bat does not ask for the review again
             save_state(current, OK, None)
             return ask_what_next(current, OK, None)
@@ -401,6 +399,8 @@ if __name__ == "__main__":
         again = previous == current or (current == POOL and previous in (POOL_FOODS, LIMITS))
         if (current in (POOL, LLM_MENU) and not again) or not common.history_file:
             new_history()
+        # The options were answered just before the prompt that asked the LLM for the foods
+        common.menu_options_asked = current == POOL and previous == POOL_FOODS
         state = run(STEPS[current][1])
         save_state(current, *state)
         previous, current = current, ask_what_next(current, *state)

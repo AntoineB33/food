@@ -49,3 +49,8 @@ product_id,fdc_id,description,shop,price,package_amount,eco,source,date
 48,169703,Auchan Riz complet cuisson rapide prêt en 10 min,Auchan Drive Massy,1.83,500,,https://www.auchan.fr/auchan-riz-complet-cuisson-rapide-pret-en-10-min/pr-C1158059,2026-10-11
 49,168173,Carrefour Classic Fraises entières surgelées,Carrefour Drive Palaiseau,3.65,650,,https://www.supermarchesmatch.fr/fr/p/1803466/classic-carrefour-fraises-entieres,2026-10-11
 50,170460,Auchan Purée de tomates,Auchan Drive Massy,0.85,500,,https://www.chronodrive.com/auchan--puree-de-tomates-P575250,2026-10-11
+51,173227,Lipton Yellow Label Thé Noir,Carrefour City Palaiseau,2.5,50,C,estimate,2026-10-11
+52,169699,Carrefour Couscous Moyen,Carrefour City Palaiseau,1.5,500,A,estimate,2026-10-11
+53,170162,Carrefour Noix de cajou nature,Carrefour City Palaiseau,3.5,125,D,estimate,2026-10-11
+54,170148,Bjorg Graines de chanvre décortiquées,Carrefour City Palaiseau,4.5,200,B,estimate,2026-10-11
+55,170184,Carrefour Pistaches décortiquées nature,Carrefour City Palaiseau,4,100,D,estimate,2026-10-11

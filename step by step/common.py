@@ -57,6 +57,9 @@ FOOD_LIMIT_FILE = DB_DIR / "food_limit.csv"
 # The foods the user is willing to buy and eat: step 0.0 computes a menu from them. Each one has a max in
 # food_limit.csv. The foods of a menu that satisfies the daily needs are added to it
 FOOD_POOL_FILE = DB_DIR / "food_pool.csv"
+# The foods the LLM chose for a menu that must differ from the saved ones: step 0.0 computes the menu from them
+# only. It is there, empty at first, from the time the LLM is asked for them to the time the menu is taken
+MENU_FOOD_FILE = DB_DIR / "menu_foods.csv"
 # What was printed, the prompts and the answers of the LLM, in one file per menu made with 0_run_all. The prompts
 # tell the address of the user: not in git
 HISTORY_DIR = DB_DIR / "history"
@@ -131,12 +134,17 @@ MENU_NOTE = f"""First write the menu as a text: each meal of the day, with its f
 {MENU_RULES}
 - The text and the csv must say the same: every food of the text is in the csv with the sum of its amounts, and the csv has no other food."""
 SEARCH_NOTE = """Use your web search tool to look into SR Legacy 2018 from fdc.nal.usda.gov (its food.csv file). Your memory of the IDs is not reliable: never write an fdc_id you did not read. A SR Legacy fdc_id is between 167512 and 175304, it is not a NDB number."""
-POOL_NOTE = f"""Write them as a text easy to copy in a csv format with those columns:
+POOL_COLUMN_NOTE = f"""Write them as a text easy to copy in a csv format with those columns:
 {",".join(f'"{col}"' for col in POOL_ANSWER_HEADER)}
 - description: the food as you would name it.
 - fdc_id, fdc_description: its ID in SR Legacy 2018 or in food_manual.csv, and its exact description there, in the state it is weighed in (raw, cooked, dry, ...). They are checked against the databases.
-- max: the most of this food that is realistic and safe to have every day, in grams, or in doses for a food of food_manual.csv whose unit is {DOSE}.
+- max: the most of this food that is realistic and safe to have every day, in grams, or in doses for a food of food_manual.csv whose unit is {DOSE}."""
+POOL_NOTE = f"""{POOL_COLUMN_NOTE}
 - Only vegan foods that are in one of the two databases, and that food_pool.csv does not have yet.
+{SEARCH_NOTE}"""
+# How the LLM writes the foods it chooses for a menu that differs from the saved ones: they may be foods of the pool
+MENU_FOOD_NOTE = f"""{POOL_COLUMN_NOTE}
+- Only vegan foods that are in one of the two databases. A food of food_pool.csv is written with its fdc_id, its fdc_description and its max there.
 {SEARCH_NOTE}"""
 # The options of the menu asked at step 1.0: (key, question, what the prompt says when it is chosen, what a menu
 # made with it is said to be made)
@@ -282,8 +290,16 @@ def ask_yes_no(question, last):
         print("  Answer y or n.")
 
 
+# Whether the options of the menu being made were already asked: 0_run_all says so when step 0.0 is run again
+# after the LLM gave foods for it (step 0.5)
+menu_options_asked = False
+
+
 def ask_menu_options():
     """Asks the user the options of the menu, the last answers being the default ones, and saves them."""
+    if menu_options_asked:
+        print("The options of the menu are the ones answered before the LLM was asked for foods.")
+        return
     options = load_menu_options()
     print("Options of the menu (Enter keeps the answer in brackets):")
     for key, question, _, _ in MENU_OPTIONS:
@@ -823,8 +839,8 @@ def save_successful_menu(rows, date, choices):
 
     Each of its rows starts with the number of the menu and its date, and ends with the options and the changes of
     the daily needs chosen at step 1.0, and the product the food was counted as (choices: {fdc_id: product_id}). Its text is saved too, in its own file.
-    A menu that is already there with the same products is not added again. A menu that a review corrected is the
-    same menu going on: it takes the place of the one that was reviewed, with its number, and is not reviewed
+    A menu that is already there with the same products is not added again. A saved menu that a review corrected
+    is the same menu going on: it takes the place of the one that was reviewed, with its number, and is not reviewed
     anymore. Returns the number of the menu.
     """
     existing, same = _read_successful_menus(rows, choices)
@@ -948,6 +964,24 @@ def mark_menu_reviewed(date):
     for row in of_menu:
         row[REVIEWED_COLUMN] = date
     write_csv(SUCCESSFUL_MENU_FILE, SUCCESSFUL_MENU_HEADER, rows)
+    return number
+
+
+def save_reviewed_menu(date):
+    """Adds the menu being made to successful_menus.csv, as reviewed on this date: it satisfies the daily needs, and
+    the LLM found no problem in it. Its foods that the food pool does not have are added to it, and the history
+    being kept becomes the file of the menu. Returns its number."""
+    rows = load_menu()
+    menu = load_identified_menu()
+    number = save_successful_menu(rows, date, choose_menu_products([fdc_id for fdc_id, _, _ in menu]))
+    mark_menu_reviewed(date)
+    # Its foods are worth having in the pool, each one with at most this amount when it has no limit yet
+    if load_food_pool() is not None:
+        added = add_to_food_pool({fdc_id: amount for fdc_id, amount, _ in menu})
+        if added:
+            print(f"{len(added)} of its foods are added to the food pool: {', '.join(row[1] for row in rows if int(row[0]) in added)}.")
+    # All the prompts and answers that led to it, and what follows
+    save_menu_history(number)
     return number
 
 
@@ -1604,6 +1638,26 @@ def start_food_pool():
             f"each one in a day is its largest amount in them, in '{FOOD_LIMIT_FILE}': edit both files as you wish."
         )
     return pool
+
+
+def load_menu_foods():
+    """Returns the IDs of the foods the LLM chose for the menu that step 0.0 computes, none while its answer is
+    waited for, None when it is not asked to choose them."""
+    if not MENU_FOOD_FILE.exists():
+        return None
+    header, rows = read_csv(MENU_FOOD_FILE)
+    check_header(header, FOOD_POOL_HEADER, MENU_FOOD_FILE)
+    return list(dict.fromkeys(to_int(row[0], f"fdc_id in {MENU_FOOD_FILE}") for row in rows))
+
+
+def save_menu_foods(fdc_ids):
+    foods = load_all_foods()
+    write_csv(MENU_FOOD_FILE, FOOD_POOL_HEADER, [[fdc_id, foods[fdc_id]] for fdc_id in fdc_ids])
+
+
+def clear_menu_foods():
+    """Forgets the foods the LLM chose: the menu is computed from the whole pool again."""
+    MENU_FOOD_FILE.unlink(missing_ok=True)
 
 
 def food_pool_block(pool):
