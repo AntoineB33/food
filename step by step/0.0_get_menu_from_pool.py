@@ -57,6 +57,7 @@ DIFFERENT_REASON = f"""The menu must differ from the ones of {SUCCESSFUL_MENU_FI
 # The prompt that asks for the foods of a menu that differs from the saved ones: an LLM judges better than a number
 # of foods what makes two menus different, and the script computes the amounts better than it
 DIFFERENT_PROMPT = f"""A vegan menu for a day is computed from a list of foods: the cheapest one whose total of the day is between min and max for each nutrient of daily_need_table.csv, each food having at most its max. You choose the foods, not their amounts.
+My health comes before the price, and the table does not tell all of it: the computation only knows the table and the prices, and leaves out every food that the table can do without, the vegetables and the fruits first. So give a min to each food that my health needs every day beyond the nutrients of the table (vegetables, fruits, legumes, whole foods, what my goals and tips ask for): the menu then has at least this much of it, whatever it costs. Give no min to the foods that are only there for their nutrients: the cheapest ones that satisfy the table are taken.
 {SUCCESSFUL_MENU_FILE.name} lists the menus I already have. Choose the foods of a new menu that really differs from each of them, so that eating those menus in turn brings me a diverse food: other main sources of protein, other grains or starchy foods, other vegetables and fruits, of other food families. A food that only differs by its kind or its processing (white or brown rice, puree or crushed tomatoes) is the same one. The water, the salt and the supplements may be the same.
 Write 12 to 20 foods, with all that a day needs (the water, the salt and the supplements too): the menu is computed from them only, may leave some of them out, and must be able to satisfy every daily need with them. Take them from food_pool.csv, the foods I am already willing to buy and eat, when it has what suits, or else other foods.
 {{foods}}{{wishes}}{{tips}}{MENU_FOOD_NOTE}"""
@@ -134,11 +135,22 @@ def main():
         usable = [fdc_id for fdc_id in usable if fdc_id in chosen or fdc_id in forced]
         if not usable:
             raise ValueError("No food the LLM chose can be counted: run this script again to compute the menu from the whole pool.")
+        # The foods the health needs whatever they cost are in the menu, with at least their min: the cheapest
+        # menu would leave them out
+        needed = {fdc_id: least for fdc_id, least in chosen.items() if least and fdc_id in usable}
+        forced |= set(needed)
+        limits |= {
+            fdc_id: (min(max(limits[fdc_id][0] or 0, least), limits[fdc_id][1]), limits[fdc_id][1])
+            for fdc_id, least in needed.items()
+        }
+        if needed:
+            print(f"{len(needed)} of them are in the menu whatever they cost, with at least their min:")
+            print("\n".join(f"{limits[fdc_id][0]:>7g} {units.get(fdc_id, GRAM):<5}{descriptions[fdc_id]}" for fdc_id in needed))
     else:
         clear_menu_foods()
         if saved and ask_yes_no("Must the menu differ from the saved menus (the LLM then chooses its foods)", False):
             # Step 0.5 saves the foods of the answer there
-            save_menu_foods([])
+            save_menu_foods({})
             set_clipboard(different_prompt(usable, saved))
             print("Paste it in a new discussion, copy the csv of the foods, then run 0.5_copy_pool.")
             return

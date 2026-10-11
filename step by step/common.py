@@ -104,6 +104,10 @@ FOOD_LIMIT_HEADER = ["fdc_id", "description", "min", "max"]
 FOOD_POOL_HEADER = ["fdc_id", "description"]
 # How the LLM writes the foods it proposes for the pool: max is the most of the food in a day
 POOL_ANSWER_HEADER = ["description", "fdc_id", "fdc_description", "max"]
+# How the LLM writes the foods it chooses for a menu: min is the least of the ones the menu must have
+MENU_FOOD_ANSWER_HEADER = [*POOL_ANSWER_HEADER, "min"]
+# The foods the LLM chose for a menu, with the least of the ones the menu must have
+MENU_FOOD_HEADER = ["fdc_id", "description", "min"]
 # How the LLM writes the limits of the foods it refuses the amount of
 LIMIT_ANSWER_HEADER = ["description", "min", "max"]
 LIMIT_NOTE = f"""as a text easy to copy in a csv format with those columns:
@@ -135,16 +139,17 @@ MENU_NOTE = f"""First write the menu as a text: each meal of the day, with its f
 {MENU_RULES}
 - The text and the csv must say the same: every food of the text is in the csv with the sum of its amounts, and the csv has no other food."""
 SEARCH_NOTE = """Use your web search tool to look into SR Legacy 2018 from fdc.nal.usda.gov (its food.csv file). Your memory of the IDs is not reliable: never write an fdc_id you did not read. A SR Legacy fdc_id is between 167512 and 175304, it is not a NDB number."""
-POOL_COLUMN_NOTE = f"""Write them as a text easy to copy in a csv format with those columns:
-{",".join(f'"{col}"' for col in POOL_ANSWER_HEADER)}
+POOL_COLUMN_NOTE = """Write them as a text easy to copy in a csv format with those columns:
+{columns}
 - description: the food as you would name it.
 - fdc_id, fdc_description: its ID in SR Legacy 2018 or in food_manual.csv, and its exact description there, in the state it is weighed in (raw, cooked, dry, ...). They are checked against the databases.
-- max: the most of this food that is realistic and safe to have every day, in grams, or in doses for a food of food_manual.csv whose unit is {DOSE}."""
-POOL_NOTE = f"""{POOL_COLUMN_NOTE}
+- max: the most of this food that is realistic and safe to have every day, in grams, or in doses for a food of food_manual.csv whose unit is {dose}."""
+POOL_NOTE = f"""{POOL_COLUMN_NOTE.format(columns=",".join(f'"{col}"' for col in POOL_ANSWER_HEADER), dose=DOSE)}
 - Only vegan foods that are in one of the two databases, and that food_pool.csv does not have yet.
 {SEARCH_NOTE}"""
 # How the LLM writes the foods it chooses for a menu that differs from the saved ones: they may be foods of the pool
-MENU_FOOD_NOTE = f"""{POOL_COLUMN_NOTE}
+MENU_FOOD_NOTE = f"""{POOL_COLUMN_NOTE.format(columns=",".join(f'"{col}"' for col in MENU_FOOD_ANSWER_HEADER), dose=DOSE)}
+- min: empty for a food the menu may leave out. For a food my health needs every day whatever it costs, the least of it that is worth having in a day, in the unit of its max: the menu then has at least this much of it.
 - Only vegan foods that are in one of the two databases. A food of food_pool.csv is written with its fdc_id, its fdc_description and its max there.
 {SEARCH_NOTE}"""
 # The options of the menu asked at step 1.0: (key, question, what the prompt says when it is chosen, what a menu
@@ -158,9 +163,10 @@ MENU_OPTIONS = [
     ),
     (
         "cheap",
-        "Must the menu be as cheap as possible",
-        "The menu must be as cheap as possible.",
-        "to be as cheap as possible",
+        "Must the menu waste no money (the cheapest of what is as good for your health)",
+        "The menu must not waste money, but my health comes before its price: between foods or products that are as "
+        "good for my health, choose the cheapest ones, and never a less healthy one because it is cheaper.",
+        "to waste no money, the health coming first",
     ),
     (
         "eco",
@@ -1672,18 +1678,24 @@ def start_food_pool():
 
 
 def load_menu_foods():
-    """Returns the IDs of the foods the LLM chose for the menu that step 0.0 computes, none while its answer is
-    waited for, None when it is not asked to choose them."""
+    """Returns the foods the LLM chose for the menu that step 0.0 computes, as {fdc_id: the least of it the menu must
+    have, None for a food it may leave out}: none while its answer is waited for, None when it is not asked to
+    choose them."""
     if not MENU_FOOD_FILE.exists():
         return None
     header, rows = read_csv(MENU_FOOD_FILE)
-    check_header(header, FOOD_POOL_HEADER, MENU_FOOD_FILE)
-    return list(dict.fromkeys(to_int(row[0], f"fdc_id in {MENU_FOOD_FILE}") for row in rows))
+    check_header(header, MENU_FOOD_HEADER, MENU_FOOD_FILE)
+    return {
+        to_int(row[0], f"fdc_id in {MENU_FOOD_FILE}"): to_float(row[2], f"min in {MENU_FOOD_FILE}") if row[2] else None
+        for row in rows
+    }
 
 
-def save_menu_foods(fdc_ids):
+def save_menu_foods(least):
     foods = load_all_foods()
-    write_csv(MENU_FOOD_FILE, FOOD_POOL_HEADER, [[fdc_id, foods[fdc_id]] for fdc_id in fdc_ids])
+    write_csv(MENU_FOOD_FILE, MENU_FOOD_HEADER, [
+        [fdc_id, foods[fdc_id], "" if amount is None else f"{amount:g}"] for fdc_id, amount in least.items()
+    ])
 
 
 def clear_menu_foods():
@@ -1708,17 +1720,23 @@ def food_pool_block(pool):
 
 def parse_pool_answer(text, foods):
     """Strictly validates the foods an LLM proposes for the pool, foods ({fdc_id: description}) being the real ones,
-    and returns the most of each one in a day, as {fdc_id: max}."""
-    claims, most = [], {}
+    and returns the most of each one in a day, as {fdc_id: max}, then the least of the ones that have a min, a
+    column that only the foods chosen for a menu have (see MENU_FOOD_NOTE), as {fdc_id: min}."""
+    claims, most, least = [], {}, {}
     for line, record in parse_answer(text, POOL_ANSWER_HEADER):
         claims.append((line, record["fdc_id"], record["fdc_description"]))
         amount = to_float(record["max"], f"max at row {line}")
         if amount <= 0:
             raise ValueError(f"Invalid max {amount} at row {line}: it is the most of the food in a day.")
+        low = to_float(record["min"], f"min at row {line}") if record.get("min") else None
+        if low is not None and not 0 < low <= amount:
+            raise ValueError(f"Invalid min {low} at row {line}: it is above 0, and at most the max of the food, {amount:g}.")
         if record["fdc_id"].isdigit():
             most[int(record["fdc_id"])] = amount
+            if low is not None:
+                least[int(record["fdc_id"])] = low
     check_food_ids(claims, foods)
-    return most
+    return most, least
 
 
 # ---------------------------------------------------------

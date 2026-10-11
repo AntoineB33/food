@@ -28,7 +28,7 @@ if __name__ == "__main__":
     # and so are the ones the LLM adds for this menu later
     chosen = load_menu_foods()
     with errors_to_llm(POOL_NOTE if chosen is None else MENU_FOOD_NOTE):
-        most = parse_pool_answer(get_clipboard(), foods)
+        most, least = parse_pool_answer(get_clipboard(), foods)
 
     # 2. They are in the pool from now on. The max the LLM gives replaces the one of a food the pool already had,
     # except for the foods of such a menu, which may be foods of the pool: those keep theirs
@@ -37,11 +37,13 @@ if __name__ == "__main__":
     if chosen is None:
         save_food_limits({fdc_id: (limits.get(fdc_id, (None, None))[0], amount) for fdc_id, amount in most.items()})
     else:
-        save_menu_foods(list(dict.fromkeys([*chosen, *most])))
+        # The min of a food is the one of the answer, or else the one it already had for this menu
+        save_menu_foods(chosen | {fdc_id: least.get(fdc_id, chosen.get(fdc_id)) for fdc_id in most})
     limits = load_food_limits()
     units = load_food_units()
     for fdc_id in most:
-        print(f"{'Added' if fdc_id in added else 'Already there'}: {foods[fdc_id]}, at most {limits[fdc_id][1]:g} {units.get(fdc_id, GRAM)} a day.")
+        must = f"at least {least[fdc_id]:g} in this menu, " if fdc_id in least else ""
+        print(f"{'Added' if fdc_id in added else 'Already there'}: {foods[fdc_id]}, {must}at most {limits[fdc_id][1]:g} {units.get(fdc_id, GRAM)} a day.")
     print(f"The pool has {len(pool) + len(added)} foods, in '{FOOD_POOL_FILE}', their max being in '{FOOD_LIMIT_FILE}'.")
     if chosen is not None:
         print(f"The menu is computed from the {len(load_menu_foods())} foods chosen for it, in '{MENU_FOOD_FILE}'.")
