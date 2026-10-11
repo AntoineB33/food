@@ -13,6 +13,7 @@ import json
 import math
 import os
 import re
+from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -883,6 +884,36 @@ def save_successful_menu(rows, date, choices):
         print(f"Saved as the menu {number} of '{SUCCESSFUL_MENU_FILE}'.")
     set_reviewed_menu(number)
     return number
+
+
+def set_successful_menu_products(number, choices):
+    """Changes the product some foods of a menu of successful_menus.csv are counted as ({fdc_id: product_id}): the
+    menu is the same one, and stays reviewed."""
+    header, rows = read_csv(SUCCESSFUL_MENU_FILE)
+    check_header(header, SUCCESSFUL_MENU_HEADER, SUCCESSFUL_MENU_FILE)
+    for row in rows:
+        if int(row[0]) == number and int(row[2]) in choices:
+            row[-1] = choices[int(row[2])]
+    write_csv(SUCCESSFUL_MENU_FILE, SUCCESSFUL_MENU_HEADER, rows)
+
+
+def restart_successful_menu(number):
+    """Makes a menu of successful_menus.csv the menu being made again, with the wishes and the changes of the daily
+    needs it was made with: once what corrects it is reviewed, it takes its place (see save_successful_menu)."""
+    _, keys, other, rows, _, changes = load_successful_menus()[number]
+    save_menu([row[:] for row in rows])
+    save_menu_description(load_successful_menu_description(number))
+    save_menu_review_state([], False, number)
+    options = load_menu_options()
+    for key, *_ in MENU_OPTIONS:
+        options[key] = key in keys
+    options["other"] = other
+    # The changes that this menu was not made with are still asked at step 1.0
+    kept = [change | {"on": False} for change in options.get("needs", []) if tuple(change["ids"]) not in changes]
+    options["needs"] = [
+        {"ids": list(ids), "min": low, "max": high, "on": True} for ids, (low, high) in changes.items()
+    ] + kept
+    MENU_OPTION_FILE.write_text(json.dumps(options, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def menu_history_file(number):
@@ -1878,6 +1909,53 @@ def product_block(fdc_ids=None):
     )
 
 
+def build_report(menu, nutrient_db, daily_needs):
+    """Returns the report of the menu (a list of (fdc_id, amount, unit)), and its needs in lack or in excess."""
+    # Sum the nutrients of the whole menu: they are given for 100g of a food, or for one dose of a supplement
+    daily_totals = defaultdict(float)
+    for fdc_id, amount, unit in menu:
+        for nutrient_id, nutrient_amount in nutrient_db[fdc_id].items():
+            daily_totals[nutrient_id] += nutrient_amount * (amount if unit == DOSE else amount / 100)
+
+    lacks, excesses, on_target, unknown, failing = [], [], [], [], []
+    for need in daily_needs:
+        # The needs without nutrient ID cannot be computed from the databases
+        if not need["ids"]:
+            continue
+        total = sum(daily_totals[nutrient_id] for nutrient_id in need["ids"])
+        max_str = "no limit" if need["max"] is None else f"{need['max']:g}"
+        record = f"- **{need['name']}** ({need['unit']}): {total:.2f} (Target: {need['min']:g} to {max_str})"
+
+        # A food without data for a nutrient counts as 0: the total is then underestimated
+        no_data = [str(fdc_id) for fdc_id, nutrients in nutrient_db.items() if set(need["ids"]) - set(nutrients)]
+        if 2 * len(no_data) >= len(nutrient_db):
+            # A total made of a few foods only tells nothing about the menu
+            unknown.append(f"- **{need['name']}**: no data for {len(no_data)} of the {len(nutrient_db)} foods")
+            continue
+        if no_data:
+            record += f" - data missing for the foods: {', '.join(no_data)}"
+
+        if total < need["min"]:
+            lacks.append(record)
+            failing.append(need)
+        elif need["max"] is not None and total > need["max"]:
+            excesses.append(record)
+            failing.append(need)
+        else:
+            on_target.append(record)
+
+    report_lines = ["### Nutrition Gap Report", ""]
+    for title, records in (
+        ("Lacks (Under Minimum)", lacks),
+        ("Excesses (Over Maximum)", excesses),
+        ("On Target", on_target),
+        ("Cannot be judged (the databases do not measure them: do not change the menu for them)", unknown),
+    ):
+        if records:
+            report_lines += [f"#### {title}:", *records, ""]
+    return "\n".join(report_lines).strip(), failing
+
+
 def dependence_rows(menu, nutrient_db, needs):
     """Returns the rows of menu_dependence.csv: the nutrients of those needs that the menu (see load_menu) counts
     on each food for, the ones the food brings at least SHARE of the total of the day of."""
@@ -1997,6 +2075,11 @@ def parse_product_answer(text, fdc_ids):
 
     existing = load_products()
     by_description = {normalize(product["description"]): product_id for product_id, product in existing.items()}
+    # Of the products of several shops that have the same description, it is the one its food is counted as
+    by_description |= {
+        normalize(existing[product_id]["description"]): product_id
+        for product_id in load_menu_products().values() if product_id in existing
+    }
     needed = set(needed_nutrient_ids())
     values = {}
     for line, record in parse_answer(nutrient_csv, PRODUCT_NUTRIENT_ANSWER_HEADER) if nutrient_csv else []:
@@ -2027,17 +2110,24 @@ def parse_product_answer(text, fdc_ids):
     return list(given.values()), [(*key, *value) for key, value in values.items()]
 
 
+def product_key(product):
+    """Returns what tells a product (see load_products) from the others: its food, its description and its shop. The
+    same one sold by another shop is another product, which has its own price."""
+    return product["fdc_id"], normalize(product["description"]), normalize(product["shop"])
+
+
 def save_product_answer(given, values, date):
     """Saves the products and the nutrients of an answer (see parse_product_answer).
 
-    A product that its food already has (same description) is updated, and so are the nutrients already given.
+    A product that its food already has (same description and same shop) is updated, and so are the nutrients
+    already given.
     Returns the products of the answer as {fdc_id: product_id}.
     """
     products = load_products()
-    known = {(p["fdc_id"], normalize(p["description"])): product_id for product_id, p in products.items()}
+    known = {product_key(p): product_id for product_id, p in products.items()}
     ids = {}
     for product in given:
-        key = product["fdc_id"], normalize(product["description"])
+        key = product_key(product)
         if key not in known:
             known[key] = max(products, default=0) + 1
         products[known[key]] = {**product, "date": date}

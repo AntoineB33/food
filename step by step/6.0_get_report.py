@@ -1,5 +1,4 @@
 import math
-from collections import defaultdict
 
 import numpy as np
 from scipy.optimize import Bounds, LinearConstraint, milp
@@ -18,6 +17,7 @@ from common import (
     SUCCESSFUL_MENU_FILE,
     amount_step,
     ask_yes_no,
+    build_report,
     choose_menu_products,
     cost_note,
     daily_need_block,
@@ -128,53 +128,6 @@ def correction_prompt(with_values, still=None, limited=None):
         "then write what this correction asks for, and nothing of the other ones.\n\n"
         + "\n\n".join(f"Correction {number}. {text}" for number, text in enumerate(corrections, start=1))
     )
-
-
-def build_report(menu, nutrient_db, daily_needs):
-    """Returns the report of the menu (a list of (fdc_id, amount, unit)), and its needs in lack or in excess."""
-    # Sum the nutrients of the whole menu: they are given for 100g of a food, or for one dose of a supplement
-    daily_totals = defaultdict(float)
-    for fdc_id, amount, unit in menu:
-        for nutrient_id, nutrient_amount in nutrient_db[fdc_id].items():
-            daily_totals[nutrient_id] += nutrient_amount * (amount if unit == DOSE else amount / 100)
-
-    lacks, excesses, on_target, unknown, failing = [], [], [], [], []
-    for need in daily_needs:
-        # The needs without nutrient ID cannot be computed from the databases
-        if not need["ids"]:
-            continue
-        total = sum(daily_totals[nutrient_id] for nutrient_id in need["ids"])
-        max_str = "no limit" if need["max"] is None else f"{need['max']:g}"
-        record = f"- **{need['name']}** ({need['unit']}): {total:.2f} (Target: {need['min']:g} to {max_str})"
-
-        # A food without data for a nutrient counts as 0: the total is then underestimated
-        no_data = [str(fdc_id) for fdc_id, nutrients in nutrient_db.items() if set(need["ids"]) - set(nutrients)]
-        if 2 * len(no_data) >= len(nutrient_db):
-            # A total made of a few foods only tells nothing about the menu
-            unknown.append(f"- **{need['name']}**: no data for {len(no_data)} of the {len(nutrient_db)} foods")
-            continue
-        if no_data:
-            record += f" - data missing for the foods: {', '.join(no_data)}"
-
-        if total < need["min"]:
-            lacks.append(record)
-            failing.append(need)
-        elif need["max"] is not None and total > need["max"]:
-            excesses.append(record)
-            failing.append(need)
-        else:
-            on_target.append(record)
-
-    report_lines = ["### Nutrition Gap Report", ""]
-    for title, records in (
-        ("Lacks (Under Minimum)", lacks),
-        ("Excesses (Over Maximum)", excesses),
-        ("On Target", on_target),
-        ("Cannot be judged (the databases do not measure them: do not change the menu for them)", unknown),
-    ):
-        if records:
-            report_lines += [f"#### {title}:", *records, ""]
-    return "\n".join(report_lines).strip(), failing
 
 
 def find_better_product(menu, generic_db, choices, daily_needs):
