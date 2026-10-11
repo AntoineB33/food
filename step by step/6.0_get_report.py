@@ -409,7 +409,7 @@ if __name__ == "__main__":
             )
         print("If the LLM writes a corrected menu, copy its whole answer and run 1.5_copy_menu_then_check: it takes the place of this one.")
         print("If it finds none, it is finished: typing y in run.bat marks the menu as reviewed.")
-        # The menu has its own history file: all the prompts and answers that led to it, this prompt being the last
+        # The history becomes the file of the menu: all the prompts and answers that led to it, and what follows
         save_menu_history(number)
     # Amounts that are only brought back within the limits are not a choice
     elif (changes or (not described and not failing)) and (

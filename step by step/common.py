@@ -860,7 +860,7 @@ def save_successful_menu(rows, date, choices):
         (SUCCESSFUL_MENU_DESCRIPTION_DIR / f"{number}.txt").write_text(description, encoding="utf-8")
     if replaced:
         # The history being kept led to the menu as it is now, whatever history its file was taken from
-        if history_file:
+        if history_file and not is_menu_history(history_file):
             menu_history_file(number).unlink(missing_ok=True)
         print(f"Saved as the menu {number} of '{SUCCESSFUL_MENU_FILE}', in place of the one that the review corrected.")
     else:
@@ -874,21 +874,32 @@ def menu_history_file(number):
     return HISTORY_DIR / f"menu {number}.txt"
 
 
-def save_menu_history(number):
-    """Keeps the history that led to a menu of successful_menus.csv in its own file: all that the history being
-    kept has so far.
+def is_menu_history(path):
+    """Whether a history file is the one of a menu of successful_menus.csv, and not of a menu that is not saved yet."""
+    return Path(path).name.startswith("menu ")
 
-    The file of a menu that already has one is only written again from the history it was taken from, which went
-    on since (a review corrected the menu): another history that only finds this menu again did not lead to it.
+
+def save_menu_history(number):
+    """Makes the history being kept the file of a menu of successful_menus.csv: it is renamed after the menu, and
+    goes on there. A menu has so one history file, with all that led to it and all that follows.
+
+    The file of a menu that already has one only gives its place to the history it was taken from: another history
+    that only finds this menu again did not lead to it, and keeps its own file. So does the history of another menu.
     """
-    if not history_file or not Path(history_file).exists():
-        return
-    text = Path(history_file).read_text(encoding="utf-8")
+    global history_file
     path = menu_history_file(number)
-    if path.exists() and path.read_text(encoding="utf-8").split("\n", 1)[0] != text.split("\n", 1)[0]:
+    if not history_file or not Path(history_file).exists() or is_menu_history(history_file):
         return
-    path.write_text(text, encoding="utf-8")
-    print(f"The history that led to the menu {number} is in '{path}'.")
+
+    def first_line(file):
+        with open(file, encoding="utf-8") as f:
+            return f.readline()
+
+    if path.exists() and first_line(path) != first_line(history_file):
+        return
+    os.replace(history_file, path)
+    history_file = path
+    print(f"The history that led to the menu {number} is in '{path}', and goes on there.")
 
 
 def load_successful_menus():

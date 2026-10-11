@@ -1,0 +1,43 @@
+### Daily Vegan Menu
+
+**Breakfast: Complex Carbs & Iron (No Calcium)**
+
+* **"Cereals, oats, regular and quick, not fortified, dry"**: 100g (~1 cup dry)
+* **"Salt, table"**: 1g (~1/6 tsp)
+* **"Beverages, water, tap, municipal"**: 700g total (Use ~400g / 1.7 cups to cook the oats, and drink the remaining 300g / 1.3 cups)
+* *Preparation*: Cook the dry oats with water and salt to form a hearty porridge. This meal prioritizes complex carbs and plant-based iron. Because calcium blocks iron absorption, calcium-fortified foods are completely excluded from this meal.
+
+**Lunch: Diverse Protein & Complex Carbs (No Calcium)**
+
+* **Vital wheat gluten**: 50g (~1/3 cup dry)
+* **"Rice, white, long-grain, regular, raw, unenriched"**: 135g (~3/4 cup raw)
+* **Nutritional yeast**: 14g (~2 tbsp)
+* **"Oil, canola"**: 15g (~1 tbsp)
+* **"Salt, table"**: 1.5g (~1/4 tsp)
+* **"Beverages, water, tap, municipal"**: 560g total (~60g mixed into the gluten, drink the remaining 500g / 2.1 cups)
+* *Preparation*: Mix the vital wheat gluten, nutritional yeast, salt, and water to form a seitan dough. Pan-fry or steam the seitan using the canola oil. Serve alongside the white rice (boiled). This meal introduces wheat as a diverse protein source, keeping you from over-relying on soy.
+
+**Afternoon Snack: Calcium, Fat & Vitamins (No Iron-Rich Grains)**
+
+* **"Soymilk, original and vanilla, with added calcium, vitamins A and D"**: 630g (~2.6 cups)
+* **Soy protein isolate**: 48g (~1.5 scoops)
+* **"Peanut butter, smooth style, without salt"**: 25g (~1.5 tbsp)
+* **Vegan multivitamin**: 1 dose (1 pill)
+* **"Algae oil supplement, pill"**: 1 dose (1 pill)
+* **"Choline supplement, pill"**: 1 dose (1 pill)
+* **"Beverages, water, tap, municipal"**: 335g (~1.4 cups) to drink.
+* *Preparation*: Blend the soymilk, soy protein isolate, and peanut butter into a protein shake, and take your three supplement pills with it.
+* *Goal Check*: This meal fulfills several rules at once. You are consuming your fat-soluble vitamins (Vitamins A and D in the soymilk, plus the multivitamin and algae oil) alongside a healthy fat source (peanut butter) for optimal intestinal absorption. Furthermore, your calcium intake (fortified soymilk) is completely isolated from your iron-rich grain meals. Finally, this contains exactly your 2 allowed soy foods for the day, which contribute roughly 64g of protein—safely under half of your day's total protein.
+
+**Dinner: Fiber, Fats & Carbs (No Calcium)**
+
+* **"Pasta, dry, enriched"**: 80g (~2 oz / 1 cup dry)
+* **Nutritional yeast**: 14g (~2 tbsp)
+* **"Oil, canola"**: 20g (~1.5 tbsp)
+* **"Salt, table"**: 1.5g (~1/4 tsp)
+* **"Beverages, water, tap, municipal"**: 1000g total (Use for boiling pasta, drink the rest)
+* *Preparation*: Boil the dry pasta in salted water. Drain, then toss with the remaining canola oil and nutritional yeast to make a savory sauce.
+
+---
+
+Here is the exact table of your daily foods, formatted as a CSV with unchanged descriptions, amounts, and units:
