@@ -215,7 +215,7 @@ def write_history(text):
 def write_history_block(title, text):
     """Adds a prompt or an answer of the LLM to the history, between two lines that tell what it is."""
     write_history(
-        f"\n{'<' * 20} {title} ({datetime.now():%H:%M:%S})\n{text.strip()}\n{'>' * 20} END OF THE {title}\n\n"
+        f"\n{'<' * 20} {title} ({datetime.now():%Y-%m-%d %H:%M:%S})\n{text.strip()}\n{'>' * 20} END OF THE {title}\n\n"
     )
 
 

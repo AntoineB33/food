@@ -6,6 +6,7 @@ where the user is: closed and started again, it asks the same question again.
 import builtins
 import json
 import runpy
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -103,6 +104,35 @@ class History:
         return getattr(self.stream, name)
 
 
+def version():
+    """Returns the version of the scripts that are run: the commit of git, whether the scripts were changed since
+    it, and when the last one was changed."""
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=FOLDER, capture_output=True, text=True, check=True).stdout.strip()
+
+    changed = datetime.fromtimestamp(max(path.stat().st_mtime for path in FOLDER.glob("*.py")))
+    try:
+        commit = f"commit {git('rev-parse', '--short', 'HEAD')}"
+        if git("status", "--porcelain", "--", "."):
+            commit += " with changes of the scripts that are not committed"
+    except (OSError, subprocess.CalledProcessError):
+        commit = "commit unknown"
+    return f"{commit}, scripts last changed on {changed:%Y-%m-%d %H:%M:%S}"
+
+
+# The version that the history was told last
+told_version = None
+
+
+def tell_version(again=False):
+    """Writes the version of the scripts to the history: only when it changed since it was told, unless again."""
+    global told_version
+    current = version()
+    if again or current != told_version:
+        common.write_history(f"Version of the scripts on {datetime.now():%Y-%m-%d} at {datetime.now():%H:%M:%S}: {current}\n")
+    told_version = current
+
+
 def keep_history():
     """Makes all that is printed and typed from now on go to the history too, and goes on with the history file of
     the menu that was being made, when there is one."""
@@ -127,6 +157,7 @@ def keep_history():
 
     builtins.input = logged_input
     common.write_history(f"\n{'-' * 20} {datetime.now():%Y-%m-%d %H:%M:%S}: run.bat is started again {'-' * 20}\n")
+    tell_version(again=True)
 
 
 def new_history():
@@ -137,6 +168,7 @@ def new_history():
         print(f"The history of the menu before is in '{common.history_file}'.")
     common.history_file = HISTORY_DIR / f"{now:%Y-%m-%d %Hh%Mm%S}.txt"
     common.write_history(f"History of the menu started on {now:%Y-%m-%d} at {now:%H:%M:%S}\n")
+    tell_version(again=True)
     print(f"The history of this menu is kept in '{common.history_file}'.")
 
 
@@ -195,6 +227,8 @@ def ask(question, prompt=None, answers=(), signs=()):
 def run(name):
     """Runs a script, and returns how it ended and the prompt it gave, None without any."""
     print(f"\n{'=' * 20} {name} {'=' * 20}")
+    # A script is read again each time it is run: it may have been changed since the last one
+    tell_version()
     common.last_prompt = None
     common.last_prompt_is_review = False
     try:
@@ -340,18 +374,21 @@ if __name__ == "__main__":
         # The script is not run again: its prompt may already be in a discussion
         print(f"\nYou were at step {NUMBERS[state[0]]}, which was already run. Type {NUMBERS[POOL]} or {NUMBERS[LLM_MENU]} to start a new menu.")
         current = ask_what_next(*state)
+        previous = state[0]
     else:
         answer = ask(
             f"Press Enter to start at {NUMBERS[POOL]}, which computes a menu from the food pool, or type "
             f"{NUMBERS[LLM_MENU]} for the LLM to write one"
         )
         current = NUMBERS.index(answer) if answer else POOL
-    previous = None
+        previous = None
 
     while True:
         # A menu starts at one of the two first steps, or at the step the user jumps to when no history is kept
-        # yet. The pool step that is run again after the LLM added foods to the pool is the same menu
-        if current == LLM_MENU or (current == POOL and previous != POOL_FOODS) or not common.history_file:
+        # yet. A first step that is run again is the same menu, and so is the pool step that is run after the LLM
+        # added foods to the pool or gave limits to the foods
+        again = previous == current or (current == POOL and previous in (POOL_FOODS, LIMITS))
+        if (current in (POOL, LLM_MENU) and not again) or not common.history_file:
             new_history()
         state = run(STEPS[current][1])
         save_state(current, *state)
